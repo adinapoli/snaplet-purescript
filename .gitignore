@@ -1,0 +1,4 @@
+dist
+.hub
+.DS_Store
+*/**/.DS_Store
