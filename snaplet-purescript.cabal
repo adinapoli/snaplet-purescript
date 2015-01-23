@@ -1,5 +1,5 @@
 name:                snaplet-purescript
-version:             0.1.0.0
+version:             0.1.0.1
 synopsis:            Automatic (re)compilation of purescript projects
 license:             MIT
 license-file:        LICENSE
@@ -8,6 +8,10 @@ maintainer:          alfredo.dinapoli@gmail.com
 category:            Web
 build-type:          Simple
 cabal-version:       >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/adinapoli/snaplet-purescript
 
 library
   exposed-modules:
