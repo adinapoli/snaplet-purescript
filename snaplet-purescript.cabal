@@ -1,6 +1,7 @@
 name:                snaplet-purescript
 version:             0.1.0.1
 synopsis:            Automatic (re)compilation of purescript projects
+description:         Automatic (re)compilation of purescript projects
 license:             MIT
 license-file:        LICENSE
 author:              Alfredo Di Napoli
