@@ -46,7 +46,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
     unless gruntFileExists $ writefile gruntfile (gruntTemplate buildDir)
     unless envCfgExists $ do
       touchfile envCfg
-      writefile envCfg (envCfgTemplate cm)
+      writefile envCfg (envCfgTemplate verbosity cm)
     unless srcDirExisted $ do
       let mainFile = srcDir </> (fromText "Main.purs")
       touchfile mainFile
@@ -119,11 +119,13 @@ gruntTemplate = T.pack . printf [r|
 |]
 
 --------------------------------------------------------------------------------
-envCfgTemplate :: CompilationMode -> T.Text
-envCfgTemplate cm = T.pack $ printf [r|
+envCfgTemplate :: Verbosity -> CompilationMode -> T.Text
+envCfgTemplate ver cm = T.pack $ printf [r|
+  # Choose one between 'Verbose' and 'Quiet'
+  verbosity = "%s"
   # Choose one between 'CompileOnce' and 'CompileAlways'
   compilationMode = "%s"
-|] (show cm)
+|] (show ver) (show cm)
 
 --------------------------------------------------------------------------------
 mainTemplate :: T.Text

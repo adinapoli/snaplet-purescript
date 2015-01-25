@@ -28,6 +28,9 @@ When you run your project using the `devel` env, `CompileAlways`
 is assumed. For all the other envs, production included, `CompileOnce`
 is the default.
 
+You can also control the verbosity of the snaplet choosing between
+`Verbose` or `Quiet`.
+
 
 # Contributions
 This library scratches my own itches, but please fork away!
