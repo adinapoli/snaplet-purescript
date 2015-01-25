@@ -2,3 +2,6 @@ dist
 .hub
 .DS_Store
 */**/.DS_Store
+example/dist
+example/snaplets
+example/log
