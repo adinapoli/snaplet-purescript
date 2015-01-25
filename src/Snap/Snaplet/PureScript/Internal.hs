@@ -27,11 +27,9 @@ data PureScript = PureScript {
   }
 
 --------------------------------------------------------------------------------
--- | TODO: This doesn't seem to work, but I do not want to 
--- spend all my time on this now.
 devFlagEnabled :: Bool
 devFlagEnabled =
-#if defined(DEVELOPMENT)
+#ifdef DEVELOPMENT
   True
 #else
   False

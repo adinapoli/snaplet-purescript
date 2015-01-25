@@ -39,11 +39,18 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   let envCfg = fromText $ destDir <> T.pack ("/" <> env <> ".cfg")
   -- If they do not exist, create the required directories
   shelly $ silently $ do
+    srcDirExisted <- test_f srcDir
     mapM_ mkdir_p [jsDir, srcDir]
     gruntFileExists <- test_f gruntfile
     envCfgExists <- test_f envCfg
     unless gruntFileExists $ writefile gruntfile (gruntTemplate buildDir)
-    unless envCfgExists $ touchfile envCfg
+    unless envCfgExists $ do
+      touchfile envCfg
+      writefile envCfg (envCfgTemplate cm)
+    unless srcDirExisted $ do
+      let mainFile = srcDir </> (fromText "Main.purs")
+      touchfile mainFile
+      writefile mainFile mainTemplate
 
   -- compile at least once, regardless of the CompilationMode
   compileAll srcDir
@@ -66,12 +73,14 @@ pursServe = do
   get >>= compileWithMode . pursCompilationMode
   -- Now get the requested file and try to serve it
   -- This returns something like /purs/Hello/index.js
-  -- TODO: Temporary: Strip "purs"
-  requestedJs <- T.drop 5 . TE.decodeUtf8 . rqURI <$> getRequest
-  pursLog $ "Serving " <> T.unpack requestedJs
-  jsDir <- getJsDir
-  let fulljsPath = jsDir <> requestedJs
-  (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText 
+  (_, requestedJs) <- T.breakOn "/" . T.drop 1 . TE.decodeUtf8 . rqURI <$> getRequest
+  case requestedJs of
+    "" -> fail "The path you asked me to serve doesn't point anywhere!"
+    _  -> do
+      pursLog $ "Serving " <> T.unpack requestedJs
+      jsDir <- getJsDir
+      let fulljsPath = jsDir <> requestedJs
+      (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText 
 
 --------------------------------------------------------------------------------
 compileAll :: MonadIO m => FilePath -> m ()
@@ -107,4 +116,21 @@ gruntTemplate = T.pack . printf [r|
   grunt.loadNpmTasks("grunt-purescript");
   grunt.registerTask("default", ["pscMake:lib"]);
   };
+|]
+
+--------------------------------------------------------------------------------
+envCfgTemplate :: CompilationMode -> T.Text
+envCfgTemplate cm = T.pack $ printf [r|
+  # Choose one between 'CompileOnce' and 'CompileAlways'
+  compilationMode = "%s"
+|] (show cm)
+
+--------------------------------------------------------------------------------
+mainTemplate :: T.Text
+mainTemplate = T.pack [r|
+  module Main where
+
+  import Debug.Trace
+
+  main = trace "Hello PS world!"
 |]
