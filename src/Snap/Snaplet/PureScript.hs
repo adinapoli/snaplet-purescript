@@ -39,14 +39,14 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   let envCfg = fromText $ destDir <> T.pack ("/" <> env <> ".cfg")
   -- If they do not exist, create the required directories
   shelly $ silently $ do
-    srcDirExisted <- test_f srcDir
+    srcDirExisted <- test_d srcDir
     mapM_ mkdir_p [jsDir, srcDir]
     gruntFileExists <- test_f gruntfile
     envCfgExists <- test_f envCfg
-    unlessM localGruntInstalled $ chdir (fromText destDir) $ do
-      liftIO $ putStrLn "Local grunt not found, installing it for you..."
-      run_ "npm" ["install", "grunt"]
-      run_ "npm" ["install", "grunt-purescript"]
+    unlessM (localGruntInstalled (fromText destDir)) $ do
+      liftIO $ do
+        putStrLn "Local grunt not found, installing it for you..."
+        installLocalGrunt (fromText destDir)
     unless gruntFileExists $ writefile gruntfile (gruntTemplate buildDir)
     unless envCfgExists $ do
       touchfile envCfg
@@ -57,7 +57,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
       writefile mainFile mainTemplate
 
   -- compile at least once, regardless of the CompilationMode
-  compileAll srcDir
+  compileAll (fromText destDir)
 
   return $ PureScript cm verbosity
   where
@@ -71,13 +71,19 @@ pursLog l = do
   unless (verb == Quiet) (liftIO $ putStrLn $ "snaplet-purescript: " <> l)
 
 --------------------------------------------------------------------------------
-localGruntInstalled :: Sh Bool
-localGruntInstalled = errExit False $ do
+localGruntInstalled :: FilePath -> Sh Bool
+localGruntInstalled dir = errExit False $ chdir dir $ do
   run_ "grunt" []
   eC <- lastExitCode
   return $ case eC of
-    0 -> True
-    _ -> False
+      99 -> False
+      _  -> True
+
+--------------------------------------------------------------------------------
+installLocalGrunt :: MonadIO m => FilePath -> m ()
+installLocalGrunt dir = liftIO $ shelly $ silently $ chdir dir $ do
+ run_ "npm" ["install", "grunt"]
+ run_ "npm" ["install", "grunt-purescript"]
 
 --------------------------------------------------------------------------------
 pursServe :: Handler b PureScript ()
@@ -100,15 +106,15 @@ compileAll :: MonadIO m => FilePath -> m ()
 compileAll fp = liftIO $ shelly $ silently $ errExit False $ chdir fp $ do
   res <- run "grunt" []
   eC <- lastExitCode
-  unless (eC == 0) $ error (show res)
+  unless (eC == 0) $ fail $ "compileAll: " ++ (T.unpack res)
 
 --------------------------------------------------------------------------------
 compileWithMode :: CompilationMode -> Handler b PureScript ()
 compileWithMode CompileOnce = return ()
 compileWithMode CompileAlways = do
-  srcDir <- getSrcDir
-  pursLog $ "Compiling from " <> T.unpack srcDir
-  compileAll (fromText srcDir)
+  projDir <- getDestDir
+  pursLog $ "Compiling Purescript project at " <> T.unpack projDir
+  compileAll (fromText projDir)
 
 --------------------------------------------------------------------------------
 jsNotFound :: T.Text -> String

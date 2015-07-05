@@ -10,9 +10,9 @@ category:            Web
 build-type:          Simple
 cabal-version:       >=1.10
 
-extra-data-files:
-  resources/css/flatui.min.css
-  resources/css/vendor/bootstrap.min.css
+data-files:
+  vendor/css/flat-ui.min.css
+  vendor/css/vendor/bootstrap.min.css
 
 source-repository head
   type:     git
