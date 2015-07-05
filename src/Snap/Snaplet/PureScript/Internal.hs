@@ -3,6 +3,7 @@
 module Snap.Snaplet.PureScript.Internal where
 
 import           Snap
+import           Control.Applicative
 import           Data.Monoid
 import           Control.Monad.IO.Class
 import           Data.Configurator as Cfg
