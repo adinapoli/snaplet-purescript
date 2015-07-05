@@ -10,10 +10,6 @@ category:            Web
 build-type:          Simple
 cabal-version:       >=1.10
 
-data-files:
-  vendor/css/flat-ui.min.css
-  vendor/css/vendor/bootstrap.min.css
-
 source-repository head
   type:     git
   location: https://github.com/adinapoli/snaplet-purescript

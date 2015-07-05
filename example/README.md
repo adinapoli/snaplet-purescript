@@ -63,3 +63,32 @@ is what we defined in our `Site.hs` routes:
 routes :: [(ByteString, AppHandler ())]
 routes = [ ("/purescript", with purs pursServe)]
 ```
+
+# When disaster strikes
+
+Let's try now to edit our `src/Main.purs` like so:
+
+```
+module Main where
+
+import Debug.Trace
+
+main = trac "Hello PS world!"
+```
+
+Note how we dropped the final `e` from `trace`. Hitting `localhost:8000/purescript/app.js`
+will now yield:
+
+```
+[4mRunning "psc:all" (psc) task[24m
+[31m>> [39mError creating file js/app.js
+[31m>> [39m
+[33mWarning: Error in module Main:
+Error at src/Main.purs line 6, column 10 - line 6, column 15:
+Unknown value trac
+See https://github.com/purescript/purescript/wiki/Error-Code-UnknownValue for more information, or to contribute content related to this error. Use --force to continue.[39m
+
+[31mAborted due to warnings.[39m
+```
+
+After fixing the typo, our js will be re-generated and served again. Success!

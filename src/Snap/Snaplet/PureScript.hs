@@ -56,8 +56,14 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
       touchfile mainFile
       writefile mainFile mainTemplate
 
-  -- compile at least once, regardless of the CompilationMode
-  compileAll (fromText destDir)
+  -- compile at least once, regardless of the CompilationMode.
+  -- NOTE: We might want to ignore the ouput of this first compilation
+  -- if we are running in a 'permissive' mode, to avoid having the entire
+  -- web service to grind to an halt in case our Purs does not compile.
+  res <- compileAll (fromText destDir)
+  case res of
+    CompilationFailed reason -> fail (T.unpack reason)
+    CompilationSucceeded -> return ()
 
   return $ PureScript cm verbosity
   where
@@ -89,28 +95,33 @@ installLocalGrunt dir = liftIO $ shelly $ silently $ chdir dir $ do
 pursServe :: Handler b PureScript ()
 pursServe = do
   modifyResponse . setContentType $ "text/javascript;charset=utf-8"
-  get >>= compileWithMode . pursCompilationMode
-  -- Now get the requested file and try to serve it
-  -- This returns something like /purs/Hello/index.js
-  (_, requestedJs) <- T.breakOn "/" . T.drop 1 . TE.decodeUtf8 . rqURI <$> getRequest
-  case requestedJs of
-    "" -> fail (jsNotFound requestedJs)
-    _  -> do
-      pursLog $ "Serving " <> T.unpack requestedJs
-      jsDir <- getJsDir
-      let fulljsPath = jsDir <> requestedJs
-      (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText 
+  res <- get >>= compileWithMode . pursCompilationMode
+  case res of
+    CompilationFailed reason -> writeText reason
+    CompilationSucceeded -> do
+      -- Now get the requested file and try to serve it
+      -- This returns something like /purs/Hello/index.js
+      (_, requestedJs) <- T.breakOn "/" . T.drop 1 . TE.decodeUtf8 . rqURI <$> getRequest
+      case requestedJs of
+        "" -> fail (jsNotFound requestedJs)
+        _  -> do
+          pursLog $ "Serving " <> T.unpack requestedJs
+          jsDir <- getJsDir
+          let fulljsPath = jsDir <> requestedJs
+          (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText 
 
 --------------------------------------------------------------------------------
-compileAll :: MonadIO m => FilePath -> m ()
+compileAll :: MonadIO m => FilePath -> m CompilationOutput
 compileAll fp = liftIO $ shelly $ silently $ errExit False $ chdir fp $ do
   res <- run "grunt" []
   eC <- lastExitCode
-  unless (eC == 0) $ fail $ "compileAll: " ++ (T.unpack res)
+  case (eC == 0) of
+    True -> return CompilationSucceeded
+    False -> return $ CompilationFailed res
 
 --------------------------------------------------------------------------------
-compileWithMode :: CompilationMode -> Handler b PureScript ()
-compileWithMode CompileOnce = return ()
+compileWithMode :: CompilationMode -> Handler b PureScript CompilationOutput
+compileWithMode CompileOnce = return CompilationSucceeded
 compileWithMode CompileAlways = do
   projDir <- getDestDir
   pursLog $ "Compiling Purescript project at " <> T.unpack projDir

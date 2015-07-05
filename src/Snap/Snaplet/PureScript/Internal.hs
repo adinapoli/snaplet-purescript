@@ -26,6 +26,11 @@ instance Configured Verbosity where
   convert _ = Nothing
 
 --------------------------------------------------------------------------------
+data CompilationOutput = CompilationFailed T.Text
+                       | CompilationSucceeded
+                       deriving (Show, Ord, Eq)
+
+--------------------------------------------------------------------------------
 data PureScript = PureScript {
     pursCompilationMode :: CompilationMode
   , pursVerbosity :: Verbosity
