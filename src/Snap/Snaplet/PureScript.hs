@@ -43,6 +43,10 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
     mapM_ mkdir_p [jsDir, srcDir]
     gruntFileExists <- test_f gruntfile
     envCfgExists <- test_f envCfg
+    unlessM localGruntInstalled $ chdir (fromText destDir) $ do
+      liftIO $ putStrLn "Local grunt not found, installing it for you..."
+      run_ "npm" ["install", "grunt"]
+      run_ "npm" ["install", "grunt-purescript"]
     unless gruntFileExists $ writefile gruntfile (gruntTemplate buildDir)
     unless envCfgExists $ do
       touchfile envCfg
@@ -67,6 +71,15 @@ pursLog l = do
   unless (verb == Quiet) (liftIO $ putStrLn $ "snaplet-purescript: " <> l)
 
 --------------------------------------------------------------------------------
+localGruntInstalled :: Sh Bool
+localGruntInstalled = errExit False $ do
+  run_ "grunt" []
+  eC <- lastExitCode
+  return $ case eC of
+    0 -> True
+    _ -> False
+
+--------------------------------------------------------------------------------
 pursServe :: Handler b PureScript ()
 pursServe = do
   modifyResponse . setContentType $ "text/javascript;charset=utf-8"
@@ -75,7 +88,7 @@ pursServe = do
   -- This returns something like /purs/Hello/index.js
   (_, requestedJs) <- T.breakOn "/" . T.drop 1 . TE.decodeUtf8 . rqURI <$> getRequest
   case requestedJs of
-    "" -> fail "The path you asked me to serve doesn't point anywhere!"
+    "" -> fail (jsNotFound requestedJs)
     _  -> do
       pursLog $ "Serving " <> T.unpack requestedJs
       jsDir <- getJsDir
@@ -98,23 +111,40 @@ compileWithMode CompileAlways = do
   compileAll (fromText srcDir)
 
 --------------------------------------------------------------------------------
+jsNotFound :: T.Text -> String
+jsNotFound js = printf [r|
+You asked me to serve:
+
+%s
+
+But I wasn't able to find a suitable PureScript module to build.
+
+If this is the first time you are running snaplet-purescript, have
+a look inside snaplets/purs/Gruntfile.js.
+
+You probably need to uncomment the 'main:' section to make it
+point to your Main.purs, as well as adding any relevant module to
+your 'modules:' section.
+|] (T.unpack js)
+
+--------------------------------------------------------------------------------
 gruntTemplate :: String -> T.Text
 gruntTemplate = T.pack . printf [r|
   module.exports = function(grunt) { "use strict"; grunt.initConfig({
     srcFiles: ["src/**/*.purs", "bower_components/**/src/**/*.purs"],
-    pscMake: {
+    psc: {
       options: {
           //main: "YourMainGoesHere",
-          modules: [] //Your modules list goes here
+          modules: [] //Add your modules here
       },
-      lib: {
+      all: {
         src: ["<%%=srcFiles%%>"],
-        dest: "%s"
+        dest: "%s/app.js"
       }
     }
   });
   grunt.loadNpmTasks("grunt-purescript");
-  grunt.registerTask("default", ["pscMake:lib"]);
+  grunt.registerTask("default", ["psc:all"]);
   };
 |]
 
