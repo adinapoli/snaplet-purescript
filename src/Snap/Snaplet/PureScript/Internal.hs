@@ -4,6 +4,7 @@ module Snap.Snaplet.PureScript.Internal where
 
 import           Snap
 import           Data.Monoid
+import           Control.Monad.IO.Class
 import           Data.Configurator as Cfg
 import           Data.Configurator.Types
 import           Text.Read hiding (String)

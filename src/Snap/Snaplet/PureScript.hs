@@ -8,6 +8,7 @@ module Snap.Snaplet.PureScript
     ) where
 
 import           Prelude hiding (FilePath)
+import           Control.Monad.IO.Class
 import           Snap.Core
 import           Snap.Snaplet
 import           Control.Monad
