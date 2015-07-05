@@ -29,7 +29,7 @@ executable example
     snap-core < 1.0.0.0,
     snap-server < 1.0.0.0,
     snap-loader-static < 1.0.0.0,
-    snaplet-purescript -any
+    snaplet-purescript == 0.3.0.0
 
   if flag(development)
     build-depends:

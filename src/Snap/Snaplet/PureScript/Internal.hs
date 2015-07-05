@@ -3,7 +3,9 @@
 module Snap.Snaplet.PureScript.Internal where
 
 import           Snap
+import           Control.Applicative
 import           Data.Monoid
+import           Control.Monad.IO.Class
 import           Data.Configurator as Cfg
 import           Data.Configurator.Types
 import           Text.Read hiding (String)
@@ -24,6 +26,11 @@ data Verbosity = Verbose | Quiet deriving (Show, Read, Eq)
 instance Configured Verbosity where
   convert (String t) = readMaybe . T.unpack $ t
   convert _ = Nothing
+
+--------------------------------------------------------------------------------
+data CompilationOutput = CompilationFailed T.Text
+                       | CompilationSucceeded
+                       deriving (Show, Ord, Eq)
 
 --------------------------------------------------------------------------------
 data PureScript = PureScript {

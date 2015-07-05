@@ -8,6 +8,7 @@ module Snap.Snaplet.PureScript
     ) where
 
 import           Prelude hiding (FilePath)
+import           Control.Monad.IO.Class
 import           Snap.Core
 import           Snap.Snaplet
 import           Control.Monad
@@ -39,10 +40,14 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   let envCfg = fromText $ destDir <> T.pack ("/" <> env <> ".cfg")
   -- If they do not exist, create the required directories
   shelly $ silently $ do
-    srcDirExisted <- test_f srcDir
+    srcDirExisted <- test_d srcDir
     mapM_ mkdir_p [jsDir, srcDir]
     gruntFileExists <- test_f gruntfile
     envCfgExists <- test_f envCfg
+    unlessM (localGruntInstalled (fromText destDir)) $ do
+      liftIO $ do
+        putStrLn "Local grunt not found, installing it for you..."
+        installLocalGrunt (fromText destDir)
     unless gruntFileExists $ writefile gruntfile (gruntTemplate buildDir)
     unless envCfgExists $ do
       touchfile envCfg
@@ -52,8 +57,14 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
       touchfile mainFile
       writefile mainFile mainTemplate
 
-  -- compile at least once, regardless of the CompilationMode
-  compileAll srcDir
+  -- compile at least once, regardless of the CompilationMode.
+  -- NOTE: We might want to ignore the ouput of this first compilation
+  -- if we are running in a 'permissive' mode, to avoid having the entire
+  -- web service to grind to an halt in case our Purs does not compile.
+  res <- compileAll (fromText destDir)
+  case res of
+    CompilationFailed reason -> fail (T.unpack reason)
+    CompilationSucceeded -> return ()
 
   return $ PureScript cm verbosity
   where
@@ -67,54 +78,91 @@ pursLog l = do
   unless (verb == Quiet) (liftIO $ putStrLn $ "snaplet-purescript: " <> l)
 
 --------------------------------------------------------------------------------
+localGruntInstalled :: FilePath -> Sh Bool
+localGruntInstalled dir = errExit False $ chdir dir $ do
+  run_ "grunt" []
+  eC <- lastExitCode
+  return $ case eC of
+      99 -> False
+      _  -> True
+
+--------------------------------------------------------------------------------
+installLocalGrunt :: MonadIO m => FilePath -> m ()
+installLocalGrunt dir = liftIO $ shelly $ silently $ chdir dir $ do
+ run_ "npm" ["install", "grunt"]
+ run_ "npm" ["install", "grunt-purescript"]
+
+--------------------------------------------------------------------------------
 pursServe :: Handler b PureScript ()
 pursServe = do
   modifyResponse . setContentType $ "text/javascript;charset=utf-8"
-  get >>= compileWithMode . pursCompilationMode
-  -- Now get the requested file and try to serve it
-  -- This returns something like /purs/Hello/index.js
-  (_, requestedJs) <- T.breakOn "/" . T.drop 1 . TE.decodeUtf8 . rqURI <$> getRequest
-  case requestedJs of
-    "" -> fail "The path you asked me to serve doesn't point anywhere!"
-    _  -> do
-      pursLog $ "Serving " <> T.unpack requestedJs
-      jsDir <- getJsDir
-      let fulljsPath = jsDir <> requestedJs
-      (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText 
+  res <- get >>= compileWithMode . pursCompilationMode
+  case res of
+    CompilationFailed reason -> writeText reason
+    CompilationSucceeded -> do
+      -- Now get the requested file and try to serve it
+      -- This returns something like /purs/Hello/index.js
+      (_, requestedJs) <- T.breakOn "/" . T.drop 1 . TE.decodeUtf8 . rqURI <$> getRequest
+      case requestedJs of
+        "" -> fail (jsNotFound requestedJs)
+        _  -> do
+          pursLog $ "Serving " <> T.unpack requestedJs
+          jsDir <- getJsDir
+          let fulljsPath = jsDir <> requestedJs
+          (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText 
 
 --------------------------------------------------------------------------------
-compileAll :: MonadIO m => FilePath -> m ()
+compileAll :: MonadIO m => FilePath -> m CompilationOutput
 compileAll fp = liftIO $ shelly $ silently $ errExit False $ chdir fp $ do
   res <- run "grunt" []
   eC <- lastExitCode
-  unless (eC == 0) $ error (show res)
+  case (eC == 0) of
+    True -> return CompilationSucceeded
+    False -> return $ CompilationFailed res
 
 --------------------------------------------------------------------------------
-compileWithMode :: CompilationMode -> Handler b PureScript ()
-compileWithMode CompileOnce = return ()
+compileWithMode :: CompilationMode -> Handler b PureScript CompilationOutput
+compileWithMode CompileOnce = return CompilationSucceeded
 compileWithMode CompileAlways = do
-  srcDir <- getSrcDir
-  pursLog $ "Compiling from " <> T.unpack srcDir
-  compileAll (fromText srcDir)
+  projDir <- getDestDir
+  pursLog $ "Compiling Purescript project at " <> T.unpack projDir
+  compileAll (fromText projDir)
+
+--------------------------------------------------------------------------------
+jsNotFound :: T.Text -> String
+jsNotFound js = printf [r|
+You asked me to serve:
+
+%s
+
+But I wasn't able to find a suitable PureScript module to build.
+
+If this is the first time you are running snaplet-purescript, have
+a look inside snaplets/purs/Gruntfile.js.
+
+You probably need to uncomment the 'main:' section to make it
+point to your Main.purs, as well as adding any relevant module to
+your 'modules:' section.
+|] (T.unpack js)
 
 --------------------------------------------------------------------------------
 gruntTemplate :: String -> T.Text
 gruntTemplate = T.pack . printf [r|
   module.exports = function(grunt) { "use strict"; grunt.initConfig({
     srcFiles: ["src/**/*.purs", "bower_components/**/src/**/*.purs"],
-    pscMake: {
+    psc: {
       options: {
           //main: "YourMainGoesHere",
-          modules: [] //Your modules list goes here
+          modules: [] //Add your modules here
       },
-      lib: {
+      all: {
         src: ["<%%=srcFiles%%>"],
-        dest: "%s"
+        dest: "%s/app.js"
       }
     }
   });
   grunt.loadNpmTasks("grunt-purescript");
-  grunt.registerTask("default", ["pscMake:lib"]);
+  grunt.registerTask("default", ["psc:all"]);
   };
 |]
 
