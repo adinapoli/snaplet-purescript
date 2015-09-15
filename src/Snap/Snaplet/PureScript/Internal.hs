@@ -6,6 +6,7 @@ import           Snap
 import           Control.Applicative
 import           Data.Monoid
 import           Control.Monad.IO.Class
+import           Control.Monad.Reader
 import           Data.Configurator as Cfg
 import           Data.Configurator.Types
 import           Text.Read hiding (String)
@@ -28,7 +29,7 @@ instance Configured Verbosity where
   convert _ = Nothing
 
 --------------------------------------------------------------------------------
-data CompilationOutput = CompilationFailed T.Text
+data CompilationOutput = CompilationFailed !T.Text
                        | CompilationSucceeded
                        deriving (Show, Ord, Eq)
 
@@ -36,6 +37,10 @@ data CompilationOutput = CompilationFailed T.Text
 data PureScript = PureScript {
     pursCompilationMode :: CompilationMode
   , pursVerbosity :: Verbosity
+  , pursOutputDir :: !T.Text
+  -- ^ Where to store compilation artifacts (defaults to /js)
+  , pursPwdDir :: !T.Text
+  -- ^ The CWD of your snaplet
   }
 
 --------------------------------------------------------------------------------
@@ -71,13 +76,12 @@ getDestDir = do
   return $ T.pack fp
 
 --------------------------------------------------------------------------------
-getSrcDir :: (Monad (m b v), MonadIO (m b v), MonadSnaplet m) => m b v T.Text
-getSrcDir = return . (`mappend` "/src") =<< getDestDir
+getBowerFile :: (Monad (m b v), MonadIO (m b v), MonadSnaplet m) => m b v T.Text
+getBowerFile = return . (`mappend` "/bower.json") =<< getDestDir
 
 --------------------------------------------------------------------------------
-getJsDir :: (Monad (m b v), MonadIO (m b v), MonadSnaplet m) => m b v T.Text
-getJsDir = return . (`mappend` "/js") =<< getDestDir
-
---------------------------------------------------------------------------------
-getGruntfile :: (Monad (m b v), MonadIO (m b v), MonadSnaplet m) => m b v T.Text
-getGruntfile = return . (`mappend` "/Gruntfile.js") =<< getDestDir
+getAbsoluteOutputDir :: Handler b PureScript T.Text
+getAbsoluteOutputDir = do
+  oDir <- asks pursOutputDir
+  wDir <- asks pursPwdDir
+  return $ wDir <> "/" <> oDir
