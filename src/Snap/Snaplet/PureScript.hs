@@ -11,8 +11,7 @@ module Snap.Snaplet.PureScript
 
 import           Prelude hiding (FilePath)
 import           Control.Monad.IO.Class
-import           Control.Exception (try, SomeException)
-import           System.Process
+import           Control.Exception (SomeException)
 import           Snap.Core
 import           Snap.Snaplet
 import           Data.Char
@@ -138,18 +137,14 @@ pursServe = do
 --------------------------------------------------------------------------------
 -- | Build the project (without bundling it).
 build :: MonadIO m => PureScript -> m CompilationOutput
-build PureScript{..} = liftIO $ do
-  let userPurs = "/src/**/*.purs"
-  let pkgsPurs = "/bower_components/**/src/**/*.purs"
-  let userFFI  = "/src/**/*.js"
-  let pkgsFFI  = "/bower_components/**/src/**/*.js"
-  let out      = T.unpack $ "/" <> pursOutputDir
-  res <- try $ rawSystem "cd" [T.unpack pursPwdDir, "&&", "psc", userPurs, pkgsPurs
-                               , "-f", userFFI, pkgsFFI
-                               , "-o", out]
-  case res of
-    Left  (e :: SomeException) -> return $ CompilationFailed (T.pack $ show e)
-    Right _ -> return $ CompilationSucceeded
+build PureScript{..} =
+  liftIO $ shelly $ verbosely $ errExit False $
+    chdir (fromText pursPwdDir) $ do
+      res <- run "pulp" ["build", "-o", pursOutputDir]
+      eC <- lastExitCode
+      case (eC == 0) of
+          True -> return CompilationSucceeded
+          False -> return $ CompilationFailed res
 
 --------------------------------------------------------------------------------
 bundle :: MonadIO m => PureScript -> m CompilationOutput

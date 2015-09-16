@@ -24,7 +24,6 @@ library
     base >=4.6 && < 5.0,
     snap-core < 1.0.0.0,
     snap < 1.0.0.0,
-    process,
     raw-strings-qq >= 1.0.2,
     text > 0.11 && < 1.4.0.0,
     mtl < 2.5,
