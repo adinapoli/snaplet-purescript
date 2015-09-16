@@ -1,7 +1,9 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Snap.Snaplet.PureScript 
+module Snap.Snaplet.PureScript
     ( initPurs
     , pursServe
     , module Internals
@@ -9,8 +11,11 @@ module Snap.Snaplet.PureScript
 
 import           Prelude hiding (FilePath)
 import           Control.Monad.IO.Class
+import           Control.Exception (try, SomeException)
+import           System.Process
 import           Snap.Core
 import           Snap.Snaplet
+import           Data.Char
 import           Control.Monad
 import           Control.Monad.State.Strict
 import           Paths_snaplet_purescript
@@ -31,37 +36,56 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   config <- getSnapletUserConfig
   env <- getEnvironment
   outDir <- liftIO (lookupDefault "js" config "buildDir")
-  verbosity <- liftIO (lookupDefault Verbose config "verbosity")
+  verbosity   <- liftIO (lookupDefault Verbose config "verbosity")
+  bndl        <- liftIO (lookupDefault True config "bundle")
+  bundleName  <- liftIO (lookupDefault "app.js" config "bundleName")
+  modules     <- liftIO (lookupDefault mempty config "modules")
   cm  <- getCompilationFlavour
   destDir    <- getDestDir
   let buildDir = destDir <> "/" <> outDir
   bowerfile  <- fromText <$> getBowerFile
   let envCfg = fromText $ destDir <> T.pack ("/" <> env <> ".cfg")
   -- If they do not exist, create the required directories
-  shelly $ silently $ do
+  purs <- shelly $ verbosely $ do
     mapM_ mkdir_p [fromText outDir]
     bowerFileExists <- test_f bowerfile
     envCfgExists <- test_f envCfg
     unlessM (pulpInstalled (fromText destDir)) $ do
       liftIO $ do
-        putStrLn "Local pulp not found, installing it for you..."
+        putStrLn $ T.unpack $ "Local pulp not found in " <> destDir <> ", installing it for you..."
         installPulp (fromText destDir)
+        putStrLn $ "Pulp installed."
+    echo $ "Checking existance of " <> toTextIgnore bowerfile
     unless bowerFileExists $ do
       chdir (fromText destDir) $ run_ "pulp" ["init"]
+    echo $ "Checking existance of " <> toTextIgnore envCfg
+
+    let purs = PureScript {
+               pursCompilationMode = cm
+             , pursVerbosity  = verbosity
+             , pursBundle     = bndl
+             , pursBundleName = bundleName
+             , pursPwdDir = destDir
+             , pursOutputDir = outDir
+             , pursModules = modules
+             }
+
     unless envCfgExists $ do
       touchfile envCfg
-      writefile envCfg (envCfgTemplate verbosity cm)
+      writefile envCfg (envCfgTemplate purs)
+    return purs
 
   -- compile at least once, regardless of the CompilationMode.
   -- NOTE: We might want to ignore the ouput of this first compilation
   -- if we are running in a 'permissive' mode, to avoid having the entire
   -- web service to grind to an halt in case our Purs does not compile.
-  res <- compileAll (fromText destDir) buildDir
+  res <- build  purs
+  _   <- bundle purs
   case res of
     CompilationFailed reason -> fail (T.unpack reason)
     CompilationSucceeded -> return ()
 
-  return $ PureScript cm verbosity outDir destDir
+  return purs
   where
     description = "Automatic (re)compilation of PureScript projects"
     dataDir = liftM (++ "/resources") getDataDir
@@ -74,12 +98,16 @@ pursLog l = do
 
 --------------------------------------------------------------------------------
 pulpInstalled :: FilePath -> Sh Bool
-pulpInstalled dir = errExit False $ chdir dir $ do
-  run_ "pulp" []
-  eC <- lastExitCode
-  return $ case eC of
-      0  -> True
-      _ -> False
+pulpInstalled dir = errExit False $ silently $ chdir dir $ do
+  check `catchany_sh` \(_ :: SomeException) -> return False
+  where
+    check = do
+      run_ "pulp" []
+      eC <- lastExitCode
+      return $ case eC of
+          0  -> True
+          1  -> True
+          _  -> False
 
 --------------------------------------------------------------------------------
 installPulp :: MonadIO m => FilePath -> m ()
@@ -89,44 +117,80 @@ installPulp dir = liftIO $ shelly $ silently $ chdir dir $ do
 --------------------------------------------------------------------------------
 pursServe :: Handler b PureScript ()
 pursServe = do
-  modifyResponse . setContentType $ "text/javascript;charset=utf-8"
-  outDir <- getAbsoluteOutputDir
-  pwdDir <- getDestDir
-  compMode <- gets pursCompilationMode
-  res <- compileWithMode compMode (fromText pwdDir) outDir
+  (_, requestedJs) <- (fmap (T.takeWhile (/= '?')) . T.breakOn "/" . T.drop 1 . TE.decodeUtf8 . rqURI) <$> getRequest
+  case requestedJs of
+    "" -> fail (jsNotFound requestedJs)
+    _ -> do
+      pursLog $ "Requested file: " <> T.unpack requestedJs
+      modifyResponse . setContentType $ "text/javascript;charset=utf-8"
+      pwdDir <- getDestDir
+      outDir <- getAbsoluteOutputDir
+      let fulljsPath = outDir <> requestedJs
+      pursLog $ "Serving " <> T.unpack (fulljsPath)
+      compMode <- gets pursCompilationMode
+      res <- compileWithMode
+      _   <- bundleWithMode (T.drop 1 requestedJs)
+      case res of
+          CompilationFailed reason -> writeText reason
+          CompilationSucceeded ->
+            (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText
+
+--------------------------------------------------------------------------------
+-- | Build the project (without bundling it).
+build :: MonadIO m => PureScript -> m CompilationOutput
+build PureScript{..} = liftIO $ do
+  let userPurs = "/src/**/*.purs"
+  let pkgsPurs = "/bower_components/**/src/**/*.purs"
+  let userFFI  = "/src/**/*.js"
+  let pkgsFFI  = "/bower_components/**/src/**/*.js"
+  let out      = T.unpack $ "/" <> pursOutputDir
+  res <- try $ rawSystem "cd" [T.unpack pursPwdDir, "&&", "psc", userPurs, pkgsPurs
+                               , "-f", userFFI, pkgsFFI
+                               , "-o", out]
   case res of
-    CompilationFailed reason -> writeText reason
-    CompilationSucceeded -> do
-      -- Now get the requested file and try to serve it
-      -- This returns something like /purs/Hello/index.js
-      (_, requestedJs) <- T.breakOn "/" . T.drop 1 . TE.decodeUtf8 . rqURI <$> getRequest
-      case requestedJs of
-        "" -> fail (jsNotFound requestedJs)
-        _  -> do
-          pursLog $ "Serving " <> T.unpack requestedJs
-          outDir <- getAbsoluteOutputDir
-          let fulljsPath = outDir <> requestedJs
-          (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText
+    Left  (e :: SomeException) -> return $ CompilationFailed (T.pack $ show e)
+    Right _ -> return $ CompilationSucceeded
 
 --------------------------------------------------------------------------------
-compileAll :: MonadIO m => FilePath -> T.Text -> m CompilationOutput
-compileAll workDir outputDir =
-  liftIO $ shelly $ silently $ errExit False $ chdir workDir $ do
-    res <- run "pulp" ["build", "-O", "--to", outputDir]
-    eC <- lastExitCode
-    case (eC == 0) of
-        True -> return CompilationSucceeded
-        False -> return $ CompilationFailed res
+bundle :: MonadIO m => PureScript -> m CompilationOutput
+bundle PureScript{..} =
+  liftIO $ shelly $ verbosely $ errExit False $ chdir (fromText pursPwdDir) $ do
+      let bundlePath = pursOutputDir <> "/" <> pursBundleName
+      case pursBundle of
+        False -> return CompilationSucceeded
+        True -> do
+          rm_rf (fromText bundlePath)
+          let modules = T.intercalate " -m " pursModules
+          echo $ "Bundling everything in " <> bundlePath
+          res <- run "psc-bundle" (["js/**/*.js", "-m"] <> (T.words modules) <>
+                                   ["-o", bundlePath, "-n", "PS"])
+          eC <- lastExitCode
+          case (eC == 0) of
+            True -> return CompilationSucceeded
+            False -> return $ CompilationFailed res
 
 --------------------------------------------------------------------------------
-compileWithMode :: CompilationMode
-                -> FilePath
-                -> T.Text
-                -> Handler b PureScript CompilationOutput
-compileWithMode CompileOnce _ _ = return CompilationSucceeded
-compileWithMode CompileAlways workDir outDir = do
-  pursLog $ "Compiling Purescript project at " <> T.unpack (toTextIgnore workDir)
-  compileAll workDir outDir
+compileWithMode :: Handler b PureScript CompilationOutput
+compileWithMode = do
+  mode <- gets pursCompilationMode
+  case mode of
+    CompileOnce -> return CompilationSucceeded
+    CompileAlways -> do
+      workDir <- gets pursPwdDir
+      pursLog $ "Compiling Purescript project at " <> T.unpack workDir
+      get >>= build
+
+--------------------------------------------------------------------------------
+bundleWithMode :: T.Text -> Handler b PureScript CompilationOutput
+bundleWithMode artifactName = do
+  mode <- gets pursCompilationMode
+  case mode of
+    CompileOnce -> return CompilationSucceeded
+    CompileAlways -> do
+      workDir <- gets pursPwdDir
+      pursLog $ "Bundling Purescript project at " <> T.unpack workDir
+      outDir  <- gets pursOutputDir
+      get >>= bundle
 
 --------------------------------------------------------------------------------
 jsNotFound :: T.Text -> String
@@ -138,42 +202,25 @@ You asked me to serve:
 But I wasn't able to find a suitable PureScript module to build.
 
 If this is the first time you are running snaplet-purescript, have
-a look inside snaplets/purs/Gruntfile.js.
-
-You probably need to uncomment the 'main:' section to make it
-point to your Main.purs, as well as adding any relevant module to
-your 'modules:' section.
+a look inside snaplets/purs/devel.cfg.
 |] (T.unpack js)
 
 --------------------------------------------------------------------------------
-gruntTemplate :: String -> T.Text
-gruntTemplate = T.pack . printf [r|
-  module.exports = function(grunt) { "use strict"; grunt.initConfig({
-    srcFiles: ["src/**/*.purs", "bower_components/**/src/**/*.purs"],
-    psc: {
-      options: {
-          //main: "YourMainGoesHere",
-          modules: [] //Add your modules here
-      },
-      all: {
-        src: ["<%%=srcFiles%%>"],
-        dest: "%s/app.js"
-      }
-    }
-  });
-  grunt.loadNpmTasks("grunt-purescript");
-  grunt.registerTask("default", ["psc:all"]);
-  };
-|]
-
---------------------------------------------------------------------------------
-envCfgTemplate :: Verbosity -> CompilationMode -> T.Text
-envCfgTemplate ver cm = T.pack $ printf [r|
+envCfgTemplate :: PureScript -> T.Text
+envCfgTemplate PureScript{..} = T.pack $ printf [r|
   # Choose one between 'Verbose' and 'Quiet'
   verbosity = "%s"
   # Choose one between 'CompileOnce' and 'CompileAlways'
   compilationMode = "%s"
-|] (show ver) (show cm)
+  # Whether bundle everything in a fat app
+  bundle     = %s
+  bundleName = "%s"
+  # The list of modules you want to compile under the PS namespace (bundle only)
+  modules = []
+|] (show pursVerbosity)
+   (show pursCompilationMode)
+   (map toLower $ show pursBundle)
+   (T.unpack pursBundleName)
 
 --------------------------------------------------------------------------------
 mainTemplate :: T.Text

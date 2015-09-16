@@ -37,10 +37,14 @@ data CompilationOutput = CompilationFailed !T.Text
 data PureScript = PureScript {
     pursCompilationMode :: CompilationMode
   , pursVerbosity :: Verbosity
-  , pursOutputDir :: !T.Text
-  -- ^ Where to store compilation artifacts (defaults to /js)
+  , pursBundle :: !Bool
+  -- ^ Whether or not bundle everything in a fat app with a PS namespace.
+  , pursBundleName :: !T.Text
   , pursPwdDir :: !T.Text
   -- ^ The CWD of your snaplet
+  , pursOutputDir :: !T.Text
+  , pursModules :: ![T.Text]
+  -- ^ Where to store compilation artifacts (defaults to /js)
   }
 
 --------------------------------------------------------------------------------
@@ -82,6 +86,6 @@ getBowerFile = return . (`mappend` "/bower.json") =<< getDestDir
 --------------------------------------------------------------------------------
 getAbsoluteOutputDir :: Handler b PureScript T.Text
 getAbsoluteOutputDir = do
-  oDir <- asks pursOutputDir
   wDir <- asks pursPwdDir
+  oDir <- asks pursOutputDir
   return $ wDir <> "/" <> oDir
