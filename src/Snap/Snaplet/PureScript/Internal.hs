@@ -14,6 +14,8 @@ module Snap.Snaplet.PureScript.Internal (
   , getBowerFile
   , getAbsoluteOutputDir
   , findOrInstallPulp
+  , shV
+  , shS
   ) where
 
 import           Control.Exception (SomeException)
@@ -91,6 +93,10 @@ devFlagEnabled =
 --------------------------------------------------------------------------------
 shS :: MonadIO m => Sh a -> m a
 shS = liftIO . shelly . silently . escaping False
+
+--------------------------------------------------------------------------------
+shV :: MonadIO m => Sh a -> m a
+shV = liftIO . shelly . verbosely . escaping False
 
 --------------------------------------------------------------------------------
 findOrInstallPulp :: Maybe PulpPath

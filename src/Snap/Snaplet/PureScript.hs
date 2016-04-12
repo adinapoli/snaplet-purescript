@@ -15,6 +15,7 @@ import           Control.Monad.State.Strict
 import           Data.Char
 import           Data.Configurator as Cfg
 import           Data.Monoid
+import           Data.String
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import           Paths_snaplet_purescript
@@ -51,7 +52,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
     envCfgExists <- test_f envCfg
     echo $ "Checking existance of " <> toTextIgnore bowerfile
     unless bowerFileExists $ do
-      chdir (fromText destDir) $ run_ "pulp" ["init"]
+      chdir (fromText destDir) $ run_ (fromString $ getPulpPath pulpPath) ["init"]
     echo $ "Checking existance of " <> toTextIgnore envCfg
 
     let purs = PureScript {
@@ -113,14 +114,13 @@ pursServe = do
 --------------------------------------------------------------------------------
 -- | Build the project (without bundling it).
 build :: MonadIO m => PureScript -> m CompilationOutput
-build PureScript{..} =
-  liftIO $ shelly $ verbosely $ errExit False $
-    chdir (fromText pursPwdDir) $ do
-      res <- run "pulp" ["build", "-o", pursOutputDir]
-      eC <- lastExitCode
-      case (eC == 0) of
-          True -> return CompilationSucceeded
-          False -> return $ CompilationFailed res
+build PureScript{..} = shV $ errExit False $ do
+  chdir (fromText pursPwdDir) $ do
+    res <- run (fromString . getPulpPath $ pursPulpPath) ["build", "-o", pursOutputDir]
+    eC <- lastExitCode
+    case (eC == 0) of
+        True  -> return CompilationSucceeded
+        False -> return $ CompilationFailed res
 
 --------------------------------------------------------------------------------
 bundle :: MonadIO m => PureScript -> m CompilationOutput
