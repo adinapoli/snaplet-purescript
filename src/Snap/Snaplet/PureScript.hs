@@ -9,12 +9,11 @@ module Snap.Snaplet.PureScript
     , module Internals
     ) where
 
-import           Control.Exception (SomeException)
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.State.Strict
 import           Data.Char
-import           Data.Configurator
+import           Data.Configurator as Cfg
 import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
@@ -39,7 +38,8 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   verbosity   <- liftIO (lookupDefault Verbose config "verbosity")
   bndl        <- liftIO (lookupDefault True config "bundle")
   bundleName  <- liftIO (lookupDefault "app.js" config "bundleName")
-  modules     <- liftIO (lookupDefault mempty config "modules")
+  modules     <- liftIO (lookupDefault mempty config  "modules")
+  pulpPath    <- findOrInstallPulp =<< liftIO (Cfg.lookup config "pulpPath")
   cm  <- getCompilationFlavour
   destDir    <- getDestDir
   bowerfile  <- fromText <$> getBowerFile
@@ -49,11 +49,6 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
     mapM_ mkdir_p [fromText outDir]
     bowerFileExists <- test_f bowerfile
     envCfgExists <- test_f envCfg
-    unlessM (pulpInstalled (fromText destDir)) $ do
-      liftIO $ do
-        putStrLn $ T.unpack $ "Local pulp not found in " <> destDir <> ", installing it for you..."
-        installPulp (fromText destDir)
-        putStrLn $ "Pulp installed."
     echo $ "Checking existance of " <> toTextIgnore bowerfile
     unless bowerFileExists $ do
       chdir (fromText destDir) $ run_ "pulp" ["init"]
@@ -64,6 +59,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
              , pursVerbosity  = verbosity
              , pursBundle     = bndl
              , pursBundleName = bundleName
+             , pursPulpPath = pulpPath
              , pursPwdDir = destDir
              , pursOutputDir = outDir
              , pursModules = modules
@@ -94,24 +90,6 @@ pursLog :: String -> Handler b PureScript ()
 pursLog l = do
   verb <- get >>= return . pursVerbosity
   unless (verb == Quiet) (liftIO $ putStrLn $ "snaplet-purescript: " <> l)
-
---------------------------------------------------------------------------------
-pulpInstalled :: FilePath -> Sh Bool
-pulpInstalled fp = errExit False $ silently $ chdir fp $ do
-  check `catchany_sh` \(_ :: SomeException) -> return False
-  where
-    check = do
-      run_ "pulp" []
-      eC <- lastExitCode
-      return $ case eC of
-          0  -> True
-          1  -> True
-          _  -> False
-
---------------------------------------------------------------------------------
-installPulp :: MonadIO m => FilePath -> m ()
-installPulp fp = liftIO $ shelly $ silently $ chdir fp $ do
- run_ "npm" ["install", "-g", "pulp"]
 
 --------------------------------------------------------------------------------
 pursServe :: Handler b PureScript ()
@@ -201,12 +179,26 @@ a look inside snaplets/purs/devel.cfg.
 envCfgTemplate :: PureScript -> T.Text
 envCfgTemplate PureScript{..} = T.pack $ printf [r|
   # Choose one between 'Verbose' and 'Quiet'
+  #
   verbosity = "%s"
+  #
   # Choose one between 'CompileOnce' and 'CompileAlways'
+  #
   compilationMode = "%s"
+  #
   # Whether bundle everything in a fat app
+  #
   bundle     = %s
+  #
+  # The path to a specific, user-provided version of Pulp.
+  # Leave it uncommented if you plan to use the globally-installed one or you
+  # are OK with snaplet-purescript installing it for you.
+  #
+  # pulpPath = ""
+  #
+  # The name of the output bundle
   bundleName = "%s"
+  #
   # The list of modules you want to compile under the PS namespace (bundle only)
   modules = []
 |] (show pursVerbosity)
