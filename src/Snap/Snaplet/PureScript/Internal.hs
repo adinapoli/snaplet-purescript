@@ -1,16 +1,27 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Snap.Snaplet.PureScript.Internal where
+module Snap.Snaplet.PureScript.Internal (
+    CompilationMode(..)
+  , CompilationOutput(..)
+  , Verbosity(..)
+  , PulpPath(getPulpPath)
+  , PureScript(..)
+  , devFlagEnabled
+  , getCompilationFlavour
+  , getDestDir
+  , getBowerFile
+  , getAbsoluteOutputDir
+  ) where
 
-import           Snap
-import           Control.Applicative
-import           Data.Monoid
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
 import           Data.Configurator as Cfg
 import           Data.Configurator.Types
-import           Text.Read hiding (String)
+import           Data.Monoid
+import           Data.String.Conv
 import qualified Data.Text as T
+import           Snap
+import           Text.Read hiding (String)
 
 --------------------------------------------------------------------------------
 data CompilationMode =
@@ -20,6 +31,14 @@ data CompilationMode =
 
 instance Configured CompilationMode where
   convert (String t) = readMaybe . T.unpack $ t
+  convert _ = Nothing
+
+--------------------------------------------------------------------------------
+newtype PulpPath = PulpPath { getPulpPath :: FilePath }
+    deriving (Show, Read)
+
+instance Configured PulpPath where
+  convert (String t) = Just . PulpPath . toS $ t
   convert _ = Nothing
 
 data Verbosity = Verbose | Quiet deriving (Show, Read, Eq)
@@ -69,7 +88,7 @@ getCompilationFlavour = do
   Just c -> return c
   Nothing -> do
     inDevelMode <- ("devel" ==) <$> getEnvironment
-    return $ if or [inDevelMode, devFlagEnabled]
+    return $ if inDevelMode || devFlagEnabled
                then CompileAlways
                else CompileOnce
 
@@ -81,7 +100,7 @@ getDestDir = do
 
 --------------------------------------------------------------------------------
 getBowerFile :: (Monad (m b v), MonadIO (m b v), MonadSnaplet m) => m b v T.Text
-getBowerFile = return . (`mappend` "/bower.json") =<< getDestDir
+getBowerFile = (`mappend` "/bower.json") <$> getDestDir
 
 --------------------------------------------------------------------------------
 getAbsoluteOutputDir :: Handler b PureScript T.Text

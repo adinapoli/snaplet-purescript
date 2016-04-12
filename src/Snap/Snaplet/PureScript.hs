@@ -9,24 +9,25 @@ module Snap.Snaplet.PureScript
     , module Internals
     ) where
 
-import           Prelude hiding (FilePath)
-import           Control.Monad.IO.Class
 import           Control.Exception (SomeException)
+import           Control.Monad
+import           Control.Monad.IO.Class
+import           Control.Monad.State.Strict
+import           Data.Char
+import           Data.Configurator
+import           Data.Monoid
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
+import           Paths_snaplet_purescript
+import           Prelude hiding (FilePath)
+import           Shelly hiding (get)
 import           Snap.Core
 import           Snap.Snaplet
-import           Data.Char
-import           Control.Monad
-import           Control.Monad.State.Strict
-import           Paths_snaplet_purescript
-import           Shelly hiding (get)
-import           Text.Printf
-import           Data.Monoid
-import           Data.Configurator
-import qualified Data.Text.Encoding as TE
-import qualified Data.Text as T
-import           Snap.Snaplet.PureScript.Internal as Internals (PureScript)
 import           Snap.Snaplet.PureScript.Internal
+import           Snap.Snaplet.PureScript.Internal as Internals (PureScript)
+import           Text.Printf
 import           Text.RawString.QQ
+
 
 --------------------------------------------------------------------------------
 -- | Snaplet initialization
@@ -41,7 +42,6 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   modules     <- liftIO (lookupDefault mempty config "modules")
   cm  <- getCompilationFlavour
   destDir    <- getDestDir
-  let buildDir = destDir <> "/" <> outDir
   bowerfile  <- fromText <$> getBowerFile
   let envCfg = fromText $ destDir <> T.pack ("/" <> env <> ".cfg")
   -- If they do not exist, create the required directories
@@ -97,7 +97,7 @@ pursLog l = do
 
 --------------------------------------------------------------------------------
 pulpInstalled :: FilePath -> Sh Bool
-pulpInstalled dir = errExit False $ silently $ chdir dir $ do
+pulpInstalled fp = errExit False $ silently $ chdir fp $ do
   check `catchany_sh` \(_ :: SomeException) -> return False
   where
     check = do
@@ -110,7 +110,7 @@ pulpInstalled dir = errExit False $ silently $ chdir dir $ do
 
 --------------------------------------------------------------------------------
 installPulp :: MonadIO m => FilePath -> m ()
-installPulp dir = liftIO $ shelly $ silently $ chdir dir $ do
+installPulp fp = liftIO $ shelly $ silently $ chdir fp $ do
  run_ "npm" ["install", "-g", "pulp"]
 
 --------------------------------------------------------------------------------
@@ -122,11 +122,9 @@ pursServe = do
     _ -> do
       pursLog $ "Requested file: " <> T.unpack requestedJs
       modifyResponse . setContentType $ "text/javascript;charset=utf-8"
-      pwdDir <- getDestDir
       outDir <- getAbsoluteOutputDir
       let fulljsPath = outDir <> requestedJs
       pursLog $ "Serving " <> T.unpack (fulljsPath)
-      compMode <- gets pursCompilationMode
       res <- compileWithMode
       _   <- bundleWithMode (T.drop 1 requestedJs)
       case res of
@@ -177,14 +175,13 @@ compileWithMode = do
 
 --------------------------------------------------------------------------------
 bundleWithMode :: T.Text -> Handler b PureScript CompilationOutput
-bundleWithMode artifactName = do
+bundleWithMode _ = do
   mode <- gets pursCompilationMode
   case mode of
     CompileOnce -> return CompilationSucceeded
     CompileAlways -> do
       workDir <- gets pursPwdDir
       pursLog $ "Bundling Purescript project at " <> T.unpack workDir
-      outDir  <- gets pursOutputDir
       get >>= bundle
 
 --------------------------------------------------------------------------------
@@ -216,13 +213,3 @@ envCfgTemplate PureScript{..} = T.pack $ printf [r|
    (show pursCompilationMode)
    (map toLower $ show pursBundle)
    (T.unpack pursBundleName)
-
---------------------------------------------------------------------------------
-mainTemplate :: T.Text
-mainTemplate = T.pack [r|
-  module Main where
-
-  import Debug.Trace
-
-  main = trace "Hello PS world!"
-|]
