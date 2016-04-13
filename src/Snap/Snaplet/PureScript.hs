@@ -42,6 +42,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   modules     <- liftIO (lookupDefault mempty config  "modules")
   pulpPath    <- findOrInstallPulp =<< liftIO (Cfg.lookup config "pulpPath")
   psaOpts     <- liftIO (lookupDefault mempty config "psaOpts")
+  permissive  <- liftIO (lookupDefault False config "permissiveInit")
   cm  <- getCompilationFlavour
   destDir    <- getDestDir
   bowerfile  <- fromText <$> getBowerFile
@@ -63,6 +64,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
              , pursBundleName = bundleName
              , pursPulpPath = pulpPath
              , pursPsaOpts  = psaOpts
+             , pursPermissiveInit = permissive
              , pursPwdDir = destDir
              , pursOutputDir = outDir
              , pursModules = modules
@@ -74,13 +76,13 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
     return purs
 
   -- compile at least once, regardless of the CompilationMode.
-  -- NOTE: We might want to ignore the ouput of this first compilation
+  -- NOTE: We ignore the ouput of this first compilation
   -- if we are running in a 'permissive' mode, to avoid having the entire
   -- web service to grind to an halt in case our Purs does not compile.
   res <- build  purs
   _   <- bundle purs
   case res of
-    CompilationFailed reason -> fail (T.unpack reason)
+    CompilationFailed reason -> unless permissive (fail (T.unpack reason))
     CompilationSucceeded -> return ()
 
   return purs
@@ -109,7 +111,9 @@ pursServe = do
       res <- compileWithMode
       _   <- bundleWithMode (T.drop 1 requestedJs)
       case res of
-          CompilationFailed reason -> writeText reason
+          CompilationFailed reason -> do
+            let curatedOutput = T.replace "\"" "\\\"" . T.replace "\n" "\\n" $ reason
+            writeText $ "(function() { console.log(\"" <> curatedOutput <> "\"); })();"
           CompilationSucceeded ->
             (shelly $ silently $ readfile (fromText fulljsPath)) >>= writeText
 
@@ -119,11 +123,11 @@ build :: MonadIO m => PureScript -> m CompilationOutput
 build PureScript{..} = shV $ errExit False $ do
   chdir (fromText pursPwdDir) $ do
     let args = ["build", "-o", pursOutputDir] <> pursPsaOpts
-    res <- run (fromString . getPulpPath $ pursPulpPath) args
+    run_ (fromString . getPulpPath $ pursPulpPath) args
     eC <- lastExitCode
     case (eC == 0) of
         True  -> return CompilationSucceeded
-        False -> return $ CompilationFailed res
+        False -> CompilationFailed <$> lastStderr
 
 --------------------------------------------------------------------------------
 bundle :: MonadIO m => PureScript -> m CompilationOutput
@@ -202,6 +206,11 @@ envCfgTemplate PureScript{..} = T.pack $ printf [r|
   # Extra options to pass to https://github.com/natefaubion/purescript-psa,
   # if available.
   psaOpts = []
+  #
+  permissiveInit = false
+  # Be lenient towards compilation errors in case the `pursInit` function
+  # initial compilation fails. Useful in devel mode to avoid your web server
+  # to not start at all when you are debugging your PS.
   #
   # The name of the output bundle
   bundleName = "%s"

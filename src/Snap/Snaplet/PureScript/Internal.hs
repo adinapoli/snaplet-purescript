@@ -77,6 +77,10 @@ data PureScript = PureScript {
   , pursPsaOpts :: [T.Text]
   -- ^ Extra options to pass to https://github.com/natefaubion/purescript-psa,
   -- if available.
+  , pursPermissiveInit :: Bool
+  -- ^ Be lenient towards compilation errors in case the `pursInit` function
+  -- initial compilation fails. Useful in devel mode to avoid your web server
+  -- to not start at all when you are debugging your PS.
   , pursPwdDir :: !T.Text
   -- ^ The PWD of your snaplet
   , pursOutputDir :: !T.Text
