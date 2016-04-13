@@ -1,28 +1,58 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Snap.Snaplet.PureScript.Internal where
+module Snap.Snaplet.PureScript.Internal (
+    CompilationMode(..)
+  , CompilationOutput(..)
+  , Verbosity(..)
+  , PulpPath(getPulpPath)
+  , PureScript(..)
+  , devFlagEnabled
+  , getCompilationFlavour
+  , getDestDir
+  , getBowerFile
+  , getAbsoluteOutputDir
+  , findOrInstallPulp
+  , shV
+  , shS
+  ) where
 
-import           Snap
-import           Control.Applicative
-import           Data.Monoid
+import           Control.Exception (SomeException)
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
 import           Data.Configurator as Cfg
 import           Data.Configurator.Types
-import           Text.Read hiding (String)
+import           Data.Maybe
+import           Data.Monoid
+import           Data.String
+import           Data.String.Conv
 import qualified Data.Text as T
+import           Shelly hiding (FilePath)
+import           Snap
+import           Text.Read hiding (String)
 
 --------------------------------------------------------------------------------
-data CompilationMode =
-      CompileOnce
-    | CompileAlways
-    deriving (Show, Read)
+data CompilationMode = CompileOnce
+                     | CompileAlways
+                     deriving (Show, Read)
 
 instance Configured CompilationMode where
   convert (String t) = readMaybe . T.unpack $ t
   convert _ = Nothing
 
-data Verbosity = Verbose | Quiet deriving (Show, Read, Eq)
+--------------------------------------------------------------------------------
+newtype PulpPath = PulpPath { getPulpPath :: FilePath } deriving (Show, Read)
+
+instance Configured PulpPath where
+  convert (String "") = Nothing
+  convert (String t)  = Just . PulpPath . toS $ t
+  convert _ = Nothing
+
+--------------------------------------------------------------------------------
+data Verbosity = Verbose
+               | Quiet
+               deriving (Show, Read, Eq)
 
 instance Configured Verbosity where
   convert (String t) = readMaybe . T.unpack $ t
@@ -40,8 +70,19 @@ data PureScript = PureScript {
   , pursBundle :: !Bool
   -- ^ Whether or not bundle everything in a fat app with a PS namespace.
   , pursBundleName :: !T.Text
+  -- ^ The name for your bundled output.
+  , pursPulpPath :: !PulpPath
+  -- ^ The absolute path to the path executable. This can be user-provided
+  -- or inferred automatically by this snaplet.
+  , pursPsaOpts :: [T.Text]
+  -- ^ Extra options to pass to https://github.com/natefaubion/purescript-psa,
+  -- if available.
+  , pursPermissiveInit :: Bool
+  -- ^ Be lenient towards compilation errors in case the `pursInit` function
+  -- initial compilation fails. Useful in devel mode to avoid your web server
+  -- to not start at all when you are debugging your PS.
   , pursPwdDir :: !T.Text
-  -- ^ The CWD of your snaplet
+  -- ^ The PWD of your snaplet
   , pursOutputDir :: !T.Text
   , pursModules :: ![T.Text]
   -- ^ Where to store compilation artifacts (defaults to /js)
@@ -57,6 +98,48 @@ devFlagEnabled =
 #endif
 
 --------------------------------------------------------------------------------
+shS :: MonadIO m => Sh a -> m a
+shS = liftIO . shelly . silently . escaping False
+
+--------------------------------------------------------------------------------
+shV :: MonadIO m => Sh a -> m a
+shV = liftIO . shelly . verbosely . escaping False
+
+--------------------------------------------------------------------------------
+findOrInstallPulp :: Maybe PulpPath
+                  -> (Monad (m b v), MonadIO (m b v), MonadSnaplet m)
+                  => m b v PulpPath
+findOrInstallPulp mbP = do
+  let p = fromMaybe (PulpPath "pulp") mbP
+  installed <- shS (pulpInstalled p)
+  case installed of
+    True  -> return p
+    False -> shS $ do
+      echo "Pulp not found, installing it for you..."
+      installPulp >> whichPulp
+
+--------------------------------------------------------------------------------
+whichPulp :: MonadIO m => m PulpPath
+whichPulp = PulpPath . toS . T.strip <$> shS (run "which" ["pulp"])
+
+--------------------------------------------------------------------------------
+installPulp :: MonadIO m => m ()
+installPulp = shS $ run_ "npm" ["install", "-g", "pulp"]
+
+--------------------------------------------------------------------------------
+pulpInstalled :: PulpPath -> Sh Bool
+pulpInstalled (PulpPath pp) = errExit False $ silently $ do
+  check `catchany_sh` \(_ :: SomeException) -> return False
+  where
+    check = do
+      run_ (fromString pp) ["version"]
+      eC <- lastExitCode
+      return $ case eC of
+          0  -> True
+          1  -> True
+          _  -> False
+
+--------------------------------------------------------------------------------
 -- | Returns the 'CompilationMode' the Snaplet should be using.
 -- It will default to 'CompileAlways' if your Snap app was compiled with
 -- -fdevelopment or the environment is "devel", 'CompileOnce' otherwise.
@@ -69,7 +152,7 @@ getCompilationFlavour = do
   Just c -> return c
   Nothing -> do
     inDevelMode <- ("devel" ==) <$> getEnvironment
-    return $ if or [inDevelMode, devFlagEnabled]
+    return $ if inDevelMode || devFlagEnabled
                then CompileAlways
                else CompileOnce
 
@@ -81,7 +164,7 @@ getDestDir = do
 
 --------------------------------------------------------------------------------
 getBowerFile :: (Monad (m b v), MonadIO (m b v), MonadSnaplet m) => m b v T.Text
-getBowerFile = return . (`mappend` "/bower.json") =<< getDestDir
+getBowerFile = (`mappend` "/bower.json") <$> getDestDir
 
 --------------------------------------------------------------------------------
 getAbsoluteOutputDir :: Handler b PureScript T.Text
