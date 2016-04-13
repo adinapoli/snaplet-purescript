@@ -74,6 +74,9 @@ data PureScript = PureScript {
   , pursPulpPath :: !PulpPath
   -- ^ The absolute path to the path executable. This can be user-provided
   -- or inferred automatically by this snaplet.
+  , pursPsaOpts :: [T.Text]
+  -- ^ Extra options to pass to https://github.com/natefaubion/purescript-psa,
+  -- if available.
   , pursPwdDir :: !T.Text
   -- ^ The PWD of your snaplet
   , pursOutputDir :: !T.Text

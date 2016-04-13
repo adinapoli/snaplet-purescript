@@ -41,6 +41,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   bundleName  <- liftIO (lookupDefault "app.js" config "bundleName")
   modules     <- liftIO (lookupDefault mempty config  "modules")
   pulpPath    <- findOrInstallPulp =<< liftIO (Cfg.lookup config "pulpPath")
+  psaOpts     <- liftIO (lookupDefault mempty config "psaOpts")
   cm  <- getCompilationFlavour
   destDir    <- getDestDir
   bowerfile  <- fromText <$> getBowerFile
@@ -61,6 +62,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
              , pursBundle     = bndl
              , pursBundleName = bundleName
              , pursPulpPath = pulpPath
+             , pursPsaOpts  = psaOpts
              , pursPwdDir = destDir
              , pursOutputDir = outDir
              , pursModules = modules
@@ -116,7 +118,8 @@ pursServe = do
 build :: MonadIO m => PureScript -> m CompilationOutput
 build PureScript{..} = shV $ errExit False $ do
   chdir (fromText pursPwdDir) $ do
-    res <- run (fromString . getPulpPath $ pursPulpPath) ["build", "-o", pursOutputDir]
+    let args = ["build", "-o", pursOutputDir] <> pursPsaOpts
+    res <- run (fromString . getPulpPath $ pursPulpPath) args
     eC <- lastExitCode
     case (eC == 0) of
         True  -> return CompilationSucceeded
@@ -195,6 +198,10 @@ envCfgTemplate PureScript{..} = T.pack $ printf [r|
   # are OK with snaplet-purescript installing it for you.
   #
   # pulpPath = ""
+  #
+  # Extra options to pass to https://github.com/natefaubion/purescript-psa,
+  # if available.
+  psaOpts = []
   #
   # The name of the output bundle
   bundleName = "%s"
