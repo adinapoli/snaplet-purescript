@@ -27,6 +27,7 @@ before_install:
 script:
   - stack $ARGS setup
   - stack $ARGS build $BUILDFLAGS
+  - for f in examples/*; do MYDIR=$PWD && cd $f && stack install && cd $MYDIR; done
   - stack $ARGS sdist
 
 # Caching so the next build will be fast too.
