@@ -45,21 +45,22 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
       writefile envCfg envCfgTemplate
 
   config <- getSnapletUserConfig
+  hooks       <- liftIO $ getHooks config
+  shelly $ verbosely $ chdir (fromText destDir) $ preInitHook hooks
 
   outDir <- liftIO (lookupDefault "js" config "buildDir")
   verbosity   <- liftIO (lookupDefault Verbose config "verbosity")
   bndl        <- liftIO (lookupDefault True config "bundle")
   bundleName  <- liftIO (lookupDefault "app.js" config "bundleName")
   modules     <- liftIO (lookupDefault ["Main"] config  "modules")
-  pulpPath    <- findOrInstallPulp =<< liftIO (Cfg.lookup config "pulpPath")
+  psPath      <- liftIO (lookupDefault mempty config "pureScriptPath")
+  pulpPath    <- findOrInstallPulp psPath =<< liftIO (Cfg.lookup config "pulpPath")
   psaOpts     <- liftIO (lookupDefault mempty config "psaOpts")
   permissive  <- liftIO (lookupDefault False config "permissiveInit")
-  hooks       <- liftIO $ getHooks config
   cm  <- getCompilationFlavour
   bowerfile  <- fromText <$> getBowerFile
   -- If they do not exist, create the required directories
   purs <- shelly $ verbosely $ chdir (fromText destDir) $ do
-    preInitHook hooks
     mkdir_p (fromText outDir)
     bowerFileExists <- test_f bowerfile
     echo $ "Checking existance of " <> toTextIgnore bowerfile
@@ -68,16 +69,17 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
 
     return PureScript {
              pursCompilationMode = cm
-           , pursVerbosity  = verbosity
-           , pursBundle     = bndl
-           , pursBundleName = bundleName
-           , pursPulpPath = pulpPath
-           , pursPsaOpts  = psaOpts
-           , pursPermissiveInit = permissive
-           , pursPwdDir = destDir
-           , pursOutputDir = outDir
-           , pursModules   = modules
-           , pursHooks     = hooks
+           , pursVerbosity       = verbosity
+           , pursBundle          = bndl
+           , pursBundleName      = bundleName
+           , pursPulpPath        = pulpPath
+           , pursPsPath          = psPath
+           , pursPsaOpts         = psaOpts
+           , pursPermissiveInit  = permissive
+           , pursPwdDir          = destDir
+           , pursOutputDir       = outDir
+           , pursModules         = modules
+           , pursHooks           = hooks
            }
 
   -- compile at least once, regardless of the CompilationMode.
@@ -128,6 +130,7 @@ pursServe = do
 build :: MonadIO m => PureScript -> m CompilationOutput
 build PureScript{..} = shV $ errExit False $ do
   chdir (fromText pursPwdDir) $ do
+    prependToPath (fromText pursPsPath)
     preBuildHook pursHooks
     let args = ["build", "-o", pursPwdDir <> "/" <> pursOutputDir] <> pursPsaOpts
     run_ (fromString . getPulpPath $ pursPulpPath) args
@@ -141,6 +144,7 @@ build PureScript{..} = shV $ errExit False $ do
 bundle :: MonadIO m => PureScript -> m CompilationOutput
 bundle PureScript{..} =
   liftIO $ shelly $ verbosely $ errExit False $ chdir (fromText pursPwdDir) $ do
+      prependToPath (fromText pursPsPath)
       let bundlePath = pursOutputDir <> "/" <> pursBundleName
       case pursBundle of
         False -> return CompilationSucceeded
@@ -195,51 +199,57 @@ a look inside snaplets/purs/devel.cfg.
 --------------------------------------------------------------------------------
 envCfgTemplate :: T.Text
 envCfgTemplate = T.pack [r|
-  # Choose one between 'Verbose' and 'Quiet'
-  #
-  verbosity = "Verbose"
-  #
-  # Choose one between 'CompileOnce' and 'CompileAlways'
-  #
-  compilationMode = "CompileAlways"
-  #
-  # Whether bundle everything in a fat app
-  #
-  bundle     = true
-  #
-  # The path to a specific, user-provided version of Pulp.
-  # Leave it uncommented if you plan to use the globally-installed one or you
-  # are OK with snaplet-purescript installing it for you.
-  #
-  # pulpPath = ""
-  #
-  # Extra options to pass to https://github.com/natefaubion/purescript-psa,
-  # if available.
-  psaOpts = []
-  #
-  permissiveInit = false
-  # Be lenient towards compilation errors in case the `pursInit` function
-  # initial compilation fails. Useful in devel mode to avoid your web server
-  # to not start at all when you are debugging your PS.
-  #
-  # The name of the output bundle
-  bundleName = "app.js"
-  #
-  # The list of modules you want to compile under the PS namespace (bundle only)
-  # Adding 'Main' will make sure you will have something like PS.Main.main in
-  # your generated JS.
-  modules = ["Main"]
-  #
-  # Hooks - They are a way to invoke certain action during the snaplet lifecycle.
-  # They accept a shell command where the first token is the command itself,
-  # the rest are the parameters for the command. The entire hook section or each
-  # individual hook can be omitted.
-  hooks {
-    preInit    = "echo 'hello'"
-    postInit   = ""
-    preBuild   = ""
-    postBuild  = ""
-    preBundle  = ""
-    postBundle = ""
-  }
+# Choose one between 'Verbose' and 'Quiet'
+#
+verbosity = "Verbose"
+#
+# Choose one between 'CompileOnce' and 'CompileAlways'
+#
+compilationMode = "CompileAlways"
+#
+# Whether bundle everything in a fat app
+#
+bundle     = true
+#
+# The path to a specific directory containing the purescript toolchain.
+# Example: snaplet/purs/node_modules/purescript/vendor.
+# Leave it uncommented if you plan to use the globally-installed one.
+#
+# pureScriptPath = ""
+#
+# The path to a specific, user-provided version of Pulp.
+# Leave it uncommented if you plan to use the globally-installed one or you
+# are OK with snaplet-purescript installing it for you.
+#
+# pulpPath = ""
+#
+# Extra options to pass to https://github.com/natefaubion/purescript-psa,
+# if available.
+psaOpts = []
+#
+permissiveInit = false
+# Be lenient towards compilation errors in case the `pursInit` function
+# initial compilation fails. Useful in devel mode to avoid your web server
+# to not start at all when you are debugging your PS.
+#
+# The name of the output bundle
+bundleName = "app.js"
+#
+# The list of modules you want to compile under the PS namespace (bundle only)
+# Adding 'Main' will make sure you will have something like PS.Main.main in
+# your generated JS.
+modules = ["Main"]
+#
+# Hooks - They are a way to invoke certain action during the snaplet lifecycle.
+# They accept a shell command where the first token is the command itself,
+# the rest are the parameters for the command. The entire hook section or each
+# individual hook can be omitted.
+hooks {
+  preInit    = "echo 'hello'"
+  postInit   = ""
+  preBuild   = ""
+  postBuild  = ""
+  preBundle  = ""
+  postBundle = ""
+}
 |]

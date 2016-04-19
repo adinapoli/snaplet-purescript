@@ -4,6 +4,6 @@ dist
 */**/.DS_Store
 examples/**/dist
 examples/**/.stack-work
-examples/**/snaplets
+examples/example-barebone/snaplets
 examples/**/log
 .stack-work
