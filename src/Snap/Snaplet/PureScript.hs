@@ -50,7 +50,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   verbosity   <- liftIO (lookupDefault Verbose config "verbosity")
   bndl        <- liftIO (lookupDefault True config "bundle")
   bundleName  <- liftIO (lookupDefault "app.js" config "bundleName")
-  modules     <- liftIO (lookupDefault mempty config  "modules")
+  modules     <- liftIO (lookupDefault ["Main"] config  "modules")
   pulpPath    <- findOrInstallPulp =<< liftIO (Cfg.lookup config "pulpPath")
   psaOpts     <- liftIO (lookupDefault mempty config "psaOpts")
   permissive  <- liftIO (lookupDefault False config "permissiveInit")
@@ -84,7 +84,6 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   -- NOTE: We ignore the ouput of this first compilation
   -- if we are running in a 'permissive' mode, to avoid having the entire
   -- web service to grind to an halt in case our Purs does not compile.
-  liftIO $ print purs
   res <- build  purs
   _   <- bundle purs
   case res of
