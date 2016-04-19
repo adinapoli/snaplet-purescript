@@ -14,7 +14,7 @@ import           Snap.Snaplet.PureScript
 ------------------------------------------------------------------------------
 -- | The application's routes.
 routes :: [(ByteString, AppHandler ())]
-routes = [ ("/", renderIndex)
+routes = [ ("/", ifTop renderIndex)
          , ("/purescript", with purs pursServe)
          ]
 
@@ -23,10 +23,14 @@ renderIndex = writeText . T.pack $ [r|
 <html>
   <head>
     <script type='text/javascript' src="purescript/app.js"></script>
+    <script type='text/javascript' src="https://code.jquery.com/jquery-1.12.3.min.js"></script>
   </head>
   <body>
-    <div id='helloPS'>You should not see me. If you do, errors occurred in your PS file. Check your JS console!</div>
+    <div id='helloPS'>It worked! Check your JS console.</div>
   </body>
+  <script>
+   $(document).on("ready", function() { PS.Main.main(); });
+  </script>
 </html>
 |]
 

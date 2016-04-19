@@ -1,4 +1,4 @@
-name:                example
+name:                example-barebone
 version:             0.1.0.0
 synopsis:            Example
 description:         Example
@@ -14,7 +14,7 @@ Flag development
   Description: Whether to build the server in development (interpreted) mode
   Default: False
 
-executable snaplet-purescript-demo
+executable snaplet-purescript-barebone
   main-is:             Main.hs
   other-modules:
     Site

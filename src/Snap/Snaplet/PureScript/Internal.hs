@@ -30,6 +30,7 @@ import           Data.String.Conv
 import qualified Data.Text as T
 import           Shelly hiding (FilePath)
 import           Snap
+import           Snap.Snaplet.PureScript.Hooks (Hooks)
 import           Text.Read hiding (String)
 
 --------------------------------------------------------------------------------
@@ -86,7 +87,9 @@ data PureScript = PureScript {
   , pursOutputDir :: !T.Text
   , pursModules :: ![T.Text]
   -- ^ Where to store compilation artifacts (defaults to /js)
-  }
+  , pursHooks :: Hooks
+  -- ^ Hooks to run at different times during the program execution
+  } deriving Show
 
 --------------------------------------------------------------------------------
 devFlagEnabled :: Bool

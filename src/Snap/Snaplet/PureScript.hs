@@ -12,7 +12,6 @@ module Snap.Snaplet.PureScript
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.State.Strict
-import           Data.Char
 import           Data.Configurator as Cfg
 import           Data.Monoid
 import           Data.String
@@ -23,6 +22,7 @@ import           Prelude hiding (FilePath)
 import           Shelly hiding (get)
 import           Snap.Core
 import           Snap.Snaplet
+import           Snap.Snaplet.PureScript.Hooks
 import           Snap.Snaplet.PureScript.Internal
 import           Snap.Snaplet.PureScript.Internal as Internals (PureScript)
 import           Text.Printf
@@ -33,8 +33,19 @@ import           Text.RawString.QQ
 -- | Snaplet initialization
 initPurs :: SnapletInit b PureScript
 initPurs = makeSnaplet "purs" description (Just dataDir) $ do
-  config <- getSnapletUserConfig
   env <- getEnvironment
+
+  destDir    <- getDestDir
+  shelly $ verbosely $ chdir (fromText destDir) $ do
+    let envCfg = fromText $ destDir <> T.pack ("/" <> env <> ".cfg")
+    echo $ "Checking existance of " <> toTextIgnore envCfg
+    envCfgExists <- test_f envCfg
+    unless envCfgExists $ do
+      touchfile envCfg
+      writefile envCfg envCfgTemplate
+
+  config <- getSnapletUserConfig
+
   outDir <- liftIO (lookupDefault "js" config "buildDir")
   verbosity   <- liftIO (lookupDefault Verbose config "verbosity")
   bndl        <- liftIO (lookupDefault True config "bundle")
@@ -43,48 +54,44 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   pulpPath    <- findOrInstallPulp =<< liftIO (Cfg.lookup config "pulpPath")
   psaOpts     <- liftIO (lookupDefault mempty config "psaOpts")
   permissive  <- liftIO (lookupDefault False config "permissiveInit")
+  hooks       <- liftIO $ getHooks config
   cm  <- getCompilationFlavour
-  destDir    <- getDestDir
   bowerfile  <- fromText <$> getBowerFile
-  let envCfg = fromText $ destDir <> T.pack ("/" <> env <> ".cfg")
   -- If they do not exist, create the required directories
-  purs <- shelly $ verbosely $ do
-    mapM_ mkdir_p [fromText outDir]
+  purs <- shelly $ verbosely $ chdir (fromText destDir) $ do
+    preInitHook hooks
+    mkdir_p (fromText outDir)
     bowerFileExists <- test_f bowerfile
-    envCfgExists <- test_f envCfg
     echo $ "Checking existance of " <> toTextIgnore bowerfile
     unless bowerFileExists $ do
-      chdir (fromText destDir) $ run_ (fromString $ getPulpPath pulpPath) ["init"]
-    echo $ "Checking existance of " <> toTextIgnore envCfg
+      run_ (fromString $ getPulpPath pulpPath) ["init"]
 
-    let purs = PureScript {
-               pursCompilationMode = cm
-             , pursVerbosity  = verbosity
-             , pursBundle     = bndl
-             , pursBundleName = bundleName
-             , pursPulpPath = pulpPath
-             , pursPsaOpts  = psaOpts
-             , pursPermissiveInit = permissive
-             , pursPwdDir = destDir
-             , pursOutputDir = outDir
-             , pursModules = modules
-             }
-
-    unless envCfgExists $ do
-      touchfile envCfg
-      writefile envCfg (envCfgTemplate purs)
-    return purs
+    return PureScript {
+             pursCompilationMode = cm
+           , pursVerbosity  = verbosity
+           , pursBundle     = bndl
+           , pursBundleName = bundleName
+           , pursPulpPath = pulpPath
+           , pursPsaOpts  = psaOpts
+           , pursPermissiveInit = permissive
+           , pursPwdDir = destDir
+           , pursOutputDir = outDir
+           , pursModules   = modules
+           , pursHooks     = hooks
+           }
 
   -- compile at least once, regardless of the CompilationMode.
   -- NOTE: We ignore the ouput of this first compilation
   -- if we are running in a 'permissive' mode, to avoid having the entire
   -- web service to grind to an halt in case our Purs does not compile.
+  liftIO $ print purs
   res <- build  purs
   _   <- bundle purs
   case res of
     CompilationFailed reason -> unless permissive (fail (T.unpack reason))
     CompilationSucceeded -> return ()
 
+  shelly $ verbosely $ chdir (fromText destDir) $ postInitHook hooks
   return purs
   where
     description = "Automatic (re)compilation of PureScript projects"
@@ -122,9 +129,11 @@ pursServe = do
 build :: MonadIO m => PureScript -> m CompilationOutput
 build PureScript{..} = shV $ errExit False $ do
   chdir (fromText pursPwdDir) $ do
-    let args = ["build", "-o", pursOutputDir] <> pursPsaOpts
+    preBuildHook pursHooks
+    let args = ["build", "-o", pursPwdDir <> "/" <> pursOutputDir] <> pursPsaOpts
     run_ (fromString . getPulpPath $ pursPulpPath) args
     eC <- lastExitCode
+    preBuildHook pursHooks
     case (eC == 0) of
         True  -> return CompilationSucceeded
         False -> CompilationFailed <$> lastStderr
@@ -137,11 +146,13 @@ bundle PureScript{..} =
       case pursBundle of
         False -> return CompilationSucceeded
         True -> do
+          preBundleHook pursHooks
           rm_rf (fromText bundlePath)
           let modules = T.intercalate " -m " pursModules
           echo $ "Bundling everything in " <> bundlePath
           res <- run "psc-bundle" (["js/**/*.js", "-m"] <> (T.words modules) <>
                                    ["-o", bundlePath, "-n", "PS"])
+          postBundleHook pursHooks
           eC <- lastExitCode
           case (eC == 0) of
             True -> return CompilationSucceeded
@@ -183,19 +194,19 @@ a look inside snaplets/purs/devel.cfg.
 |] (T.unpack js)
 
 --------------------------------------------------------------------------------
-envCfgTemplate :: PureScript -> T.Text
-envCfgTemplate PureScript{..} = T.pack $ printf [r|
+envCfgTemplate :: T.Text
+envCfgTemplate = T.pack [r|
   # Choose one between 'Verbose' and 'Quiet'
   #
-  verbosity = "%s"
+  verbosity = "Verbose"
   #
   # Choose one between 'CompileOnce' and 'CompileAlways'
   #
-  compilationMode = "%s"
+  compilationMode = "CompileAlways"
   #
   # Whether bundle everything in a fat app
   #
-  bundle     = %s
+  bundle     = true
   #
   # The path to a specific, user-provided version of Pulp.
   # Leave it uncommented if you plan to use the globally-installed one or you
@@ -213,11 +224,23 @@ envCfgTemplate PureScript{..} = T.pack $ printf [r|
   # to not start at all when you are debugging your PS.
   #
   # The name of the output bundle
-  bundleName = "%s"
+  bundleName = "app.js"
   #
   # The list of modules you want to compile under the PS namespace (bundle only)
-  modules = []
-|] (show pursVerbosity)
-   (show pursCompilationMode)
-   (map toLower $ show pursBundle)
-   (T.unpack pursBundleName)
+  # Adding 'Main' will make sure you will have something like PS.Main.main in
+  # your generated JS.
+  modules = ["Main"]
+  #
+  # Hooks - They are a way to invoke certain action during the snaplet lifecycle.
+  # They accept a shell command where the first token is the command itself,
+  # the rest are the parameters for the command. The entire hook section or each
+  # individual hook can be omitted.
+  hooks {
+    preInit    = "echo 'hello'"
+    postInit   = ""
+    preBuild   = ""
+    postBuild  = ""
+    preBundle  = ""
+    postBundle = ""
+  }
+|]
