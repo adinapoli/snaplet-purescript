@@ -5,5 +5,7 @@ dist
 examples/**/dist
 examples/**/.stack-work
 examples/example-barebone/snaplets
+examples/example-complex/snaplets/purs/js
+examples/example-complex/node_modules
 examples/**/log
 .stack-work
