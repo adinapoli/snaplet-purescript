@@ -2,19 +2,25 @@
 
 # Snaplet for automatic recompilation of your Purescript project
 
-More doc to come, but this is being used in production so it's likely
-it will stay maintained for a while.
+![ps_repl](http://adinapoli.github.io/snaplet-purescript/images/ps_repl.png)
 
-# Running the example
+# Table of contents
 
-* Install it via `cabal install`
-* Run it with `example`: it will create the snaplet configuration for you,
-  but it will then fail as it failed to load the local node modules
-* Install `grunt` and `grunt-purescript` in the snaplet directory:
-    - `cd snaplets/purs`
-    - `npm install grunt`
-    - `npm install grunt-purescript`
-* Run it again
+* Adding `snaplet-purescript` to your snaplets
+* Requirements
+* Use `snaplet-purescript` on a fresh project
+* Use `snaplet-purescript` on an existing project
+* Guide to the snaplet configuration
+    * Verbosity
+    * Automatic recompilation
+    * Bundle
+    * Pulp Path
+    * PureScript Path
+    * Psa Options
+    * Permissive Init
+    * Bundle Name
+    * Modules
+    * Hooks
 
 ## Automatic recompilation
 
@@ -30,7 +36,6 @@ is the default.
 
 You can also control the verbosity of the snaplet choosing between
 `Verbose` or `Quiet`.
-
 
 # Contributions
 This library scratches my own itches, but please fork away!
