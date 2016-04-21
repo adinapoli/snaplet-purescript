@@ -13,6 +13,7 @@ module Snap.Snaplet.PureScript.Internal (
   , getDestDir
   , getBowerFile
   , getAbsoluteOutputDir
+  , prependToPath
   , findOrInstallPulp
   , shV
   , shS
@@ -28,6 +29,7 @@ import           Data.Monoid
 import           Data.String
 import           Data.String.Conv
 import qualified Data.Text as T
+import qualified Shelly as Sh
 import           Shelly hiding (FilePath)
 import           Snap
 import           Snap.Snaplet.PureScript.Hooks (Hooks)
@@ -73,12 +75,15 @@ data PureScript = PureScript {
   , pursBundleName :: !T.Text
   -- ^ The name for your bundled output.
   , pursPulpPath :: !PulpPath
-  -- ^ The absolute path to the path executable. This can be user-provided
+  -- ^ The absolute path to a `pulp` executable. This can be user-provided
   -- or inferred automatically by this snaplet.
+  , pursPsPath :: !T.Text
+  -- ^ The absolute path to the directory containing the PureScript toolchain.
+  -- If not specified, this snaplet will use the globally installed PureScript.
   , pursPsaOpts :: [T.Text]
   -- ^ Extra options to pass to https://github.com/natefaubion/purescript-psa,
   -- if available.
-  , pursPermissiveInit :: Bool
+  , pursPermissiveInit :: !Bool
   -- ^ Be lenient towards compilation errors in case the `pursInit` function
   -- initial compilation fails. Useful in devel mode to avoid your web server
   -- to not start at all when you are debugging your PS.
@@ -109,16 +114,17 @@ shV :: MonadIO m => Sh a -> m a
 shV = liftIO . shelly . verbosely . escaping False
 
 --------------------------------------------------------------------------------
-findOrInstallPulp :: Maybe PulpPath
+findOrInstallPulp :: T.Text
+                  -> Maybe PulpPath
                   -> (Monad (m b v), MonadIO (m b v), MonadSnaplet m)
                   => m b v PulpPath
-findOrInstallPulp mbP = do
+findOrInstallPulp psPath mbP = do
   let p = fromMaybe (PulpPath "pulp") mbP
-  installed <- shS (pulpInstalled p)
+  installed <- shS (pulpInstalled psPath p)
   case installed of
     True  -> return p
     False -> shS $ do
-      echo "Pulp not found, installing it for you..."
+      echo "Pulp not found, installing it locally for you..."
       installPulp >> whichPulp
 
 --------------------------------------------------------------------------------
@@ -126,16 +132,28 @@ whichPulp :: MonadIO m => m PulpPath
 whichPulp = PulpPath . toS . T.strip <$> shS (run "which" ["pulp"])
 
 --------------------------------------------------------------------------------
-installPulp :: MonadIO m => m ()
-installPulp = shS $ run_ "npm" ["install", "-g", "pulp"]
+-- | add the filepath onto the PATH env variable
+prependToPath :: Sh.FilePath -> Sh ()
+prependToPath fp = do
+  tp <- toTextWarn fp
+  pe <- get_env_text "PATH"
+  setenv "PATH" $ tp <> T.singleton ':' <> pe
 
 --------------------------------------------------------------------------------
-pulpInstalled :: PulpPath -> Sh Bool
-pulpInstalled (PulpPath pp) = errExit False $ silently $ do
-  check `catchany_sh` \(_ :: SomeException) -> return False
+installPulp :: MonadIO m => m ()
+installPulp = shS $ run_ "npm" ["install", "pulp"]
+
+--------------------------------------------------------------------------------
+pulpInstalled :: T.Text -> PulpPath -> Sh Bool
+pulpInstalled psPath (PulpPath pp) = errExit False $ verbosely $ do
+  check `catchany_sh` \(e :: SomeException) -> do
+    echo (toS . show $ e)
+    return False
   where
     check = do
-      run_ (fromString pp) ["version"]
+      prependToPath (fromText psPath)
+      get_env_text "PATH" >>= echo
+      run_ (fromString pp) ["--version"]
       eC <- lastExitCode
       return $ case eC of
           0  -> True

@@ -1,0 +1,9 @@
+flags: {}
+packages:
+- '.'
+- '../..'
+extra-deps:
+  - string-conv-0.1
+  - snap-loader-static-0.9.0.2
+  - raw-strings-qq-1.1
+resolver: lts-5.5
