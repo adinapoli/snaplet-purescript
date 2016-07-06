@@ -82,15 +82,16 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
            , pursHooks           = hooks
            }
 
-  -- compile at least once, regardless of the CompilationMode.
+  -- compile at least once, unless `CompileNever` was passed.
   -- NOTE: We ignore the ouput of this first compilation
   -- if we are running in a 'permissive' mode, to avoid having the entire
   -- web service to grind to an halt in case our Purs does not compile.
-  res <- build  purs
-  _   <- bundle purs
-  case res of
-    CompilationFailed reason -> unless permissive (fail (T.unpack reason))
-    CompilationSucceeded -> return ()
+  unless (cm == CompileNever) $ do
+    res <- build  purs
+    _   <- bundle purs
+    case res of
+      CompilationFailed reason -> unless permissive (fail (T.unpack reason))
+      CompilationSucceeded -> return ()
 
   shelly $ verbosely $ chdir (fromText destDir) $ postInitHook hooks
   return purs
@@ -166,7 +167,8 @@ compileWithMode :: Handler b PureScript CompilationOutput
 compileWithMode = do
   mode <- gets pursCompilationMode
   case mode of
-    CompileOnce -> return CompilationSucceeded
+    CompileNever -> return CompilationSucceeded
+    CompileOnce  -> return CompilationSucceeded
     CompileAlways -> do
       workDir <- gets pursPwdDir
       pursLog $ "Compiling Purescript project at " <> T.unpack workDir
@@ -177,7 +179,8 @@ bundleWithMode :: T.Text -> Handler b PureScript CompilationOutput
 bundleWithMode _ = do
   mode <- gets pursCompilationMode
   case mode of
-    CompileOnce -> return CompilationSucceeded
+    CompileOnce  -> return CompilationSucceeded
+    CompileNever -> return CompilationSucceeded
     CompileAlways -> do
       workDir <- gets pursPwdDir
       pursLog $ "Bundling Purescript project at " <> T.unpack workDir
