@@ -45,7 +45,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
       writefile envCfg envCfgTemplate
 
   config <- getSnapletUserConfig
-  hooks       <- liftIO $ getHooks config
+  hooks  <- liftIO $ getHooks config
   shelly $ verbosely $ chdir (fromText destDir) $ preInitHook hooks
 
   outDir <- liftIO (lookupDefault "js" config "buildDir")

@@ -153,7 +153,6 @@ pulpInstalled psPath (PulpPath pp) = errExit False $ verbosely $ do
   where
     check = do
       prependToPath (fromText psPath)
-      get_env_text "PATH" >>= echo
       run_ (fromString pp) ["--version"]
       eC <- lastExitCode
       return $ case eC of
