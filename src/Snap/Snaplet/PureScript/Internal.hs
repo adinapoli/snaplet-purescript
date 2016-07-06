@@ -38,7 +38,8 @@ import           Text.Read hiding (String)
 --------------------------------------------------------------------------------
 data CompilationMode = CompileOnce
                      | CompileAlways
-                     deriving (Show, Read)
+                     | CompileNever
+                     deriving (Show, Eq, Read)
 
 instance Configured CompilationMode where
   convert (String t) = readMaybe . T.unpack $ t
@@ -152,7 +153,6 @@ pulpInstalled psPath (PulpPath pp) = errExit False $ verbosely $ do
   where
     check = do
       prependToPath (fromText psPath)
-      get_env_text "PATH" >>= echo
       run_ (fromString pp) ["--version"]
       eC <- lastExitCode
       return $ case eC of
@@ -161,9 +161,12 @@ pulpInstalled psPath (PulpPath pp) = errExit False $ verbosely $ do
           _  -> False
 
 --------------------------------------------------------------------------------
--- | Returns the 'CompilationMode' the Snaplet should be using.
--- It will default to 'CompileAlways' if your Snap app was compiled with
--- -fdevelopment or the environment is "devel", 'CompileOnce' otherwise.
+-- | Returns the `CompilationMode` the Snaplet should be using.
+-- It will default to `CompileAlways` if your Snap app was compiled with
+-- -fdevelopment or the environment is "devel", `CompileOnce` otherwise.
+-- Consider using `CompileNever` if you do not want this snaplet to build
+-- your .js bundle on the fly, for example if you have frozen its content and
+-- you want to serve it straigth away in production.
 getCompilationFlavour :: Initializer b v CompilationMode
 getCompilationFlavour = do
  -- Any input for the user have highest priority
