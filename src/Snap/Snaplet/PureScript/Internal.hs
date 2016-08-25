@@ -29,8 +29,10 @@ import           Data.Monoid
 import           Data.String
 import           Data.String.Conv
 import qualified Data.Text as T
+import           Shelly ( run, run_, echo, fromText, errExit, catchany_sh, verbosely, lastExitCode, Sh, setenv
+                        , get_env_text, shelly, escaping, toTextWarn, silently
+                        )
 import qualified Shelly as Sh
-import           Shelly hiding (FilePath)
 import           Snap
 import           Snap.Snaplet.PureScript.Hooks (Hooks)
 import           Text.Read hiding (String)
