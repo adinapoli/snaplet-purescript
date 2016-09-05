@@ -23,7 +23,7 @@ import           Shelly hiding (get)
 import           Snap.Core
 import           Snap.Snaplet
 import           Snap.Snaplet.PureScript.Hooks
-import           Snap.Snaplet.PureScript.Internal
+import           Snap.Snaplet.PureScript.Internal as I
 import           Snap.Snaplet.PureScript.Internal as Internals (PureScript)
 import           Text.Printf
 import           Text.RawString.QQ
@@ -131,7 +131,7 @@ pursServe = do
 build :: MonadIO m => PureScript -> m CompilationOutput
 build PureScript{..} = shV $ errExit False $ do
   chdir (fromText pursPwdDir) $ do
-    prependToPath (fromText pursPsPath)
+    I.prependToPath (fromText pursPsPath)
     preBuildHook pursHooks
     let args = ["build", "-o", pursPwdDir <> "/" <> pursOutputDir] <> pursPsaOpts
     run_ (fromString . getPulpPath $ pursPulpPath) args
@@ -145,7 +145,7 @@ build PureScript{..} = shV $ errExit False $ do
 bundle :: MonadIO m => PureScript -> m CompilationOutput
 bundle PureScript{..} =
   liftIO $ shelly $ verbosely $ errExit False $ chdir (fromText pursPwdDir) $ do
-      prependToPath (fromText pursPsPath)
+      I.prependToPath (fromText pursPsPath)
       let bundlePath = pursOutputDir <> "/" <> pursBundleName
       case pursBundle of
         False -> return CompilationSucceeded
