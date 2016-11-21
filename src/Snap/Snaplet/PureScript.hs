@@ -52,6 +52,8 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   verbosity   <- liftIO (lookupDefault Verbose config "verbosity")
   bndl        <- liftIO (lookupDefault True config "bundle")
   bundleName  <- liftIO (lookupDefault "app.js" config "bundleName")
+  bundleExe   <- liftIO (lookupDefault "psc-bundle" config "bundleExe")
+  bundleOpts  <- liftIO (lookupDefault mempty config "bundleOpts")
   modules     <- liftIO (lookupDefault ["Main"] config  "modules")
   psPath      <- liftIO (lookupDefault mempty config "pureScriptPath")
   pulpPath    <- findOrInstallPulp psPath =<< liftIO (Cfg.lookup config "pulpPath")
@@ -72,6 +74,8 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
            , pursVerbosity       = verbosity
            , pursBundle          = bndl
            , pursBundleName      = bundleName
+           , pursBundleExe       = bundleExe
+           , pursBundleOpts      = bundleOpts
            , pursPulpPath        = pulpPath
            , pursPsPath          = psPath
            , pursPsaOpts         = psaOpts
@@ -152,10 +156,12 @@ bundle PureScript{..} =
         True -> do
           preBundleHook pursHooks
           rm_rf (fromText bundlePath)
-          let modules = T.intercalate " -m " pursModules
+          let modules = T.intercalate "," pursModules
           echo $ "Bundling everything in " <> bundlePath
-          res <- run "psc-bundle" (["js/**/*.js", "-m"] <> (T.words modules) <>
-                                   ["-o", bundlePath, "-n", "PS"])
+          res <- case (pursBundleExe, pursBundleOpts) of
+                ("psc-bundle", []) -> run "psc-bundle" (["js/**/*.js", "-m"] <> (T.words modules) <> ["-o", bundlePath, "-n", "PS"])
+                ("pulp", [])       -> run "pulp" (["build", "-I", "src", "--modules"] <> (T.words modules) <> ["-t", bundlePath])
+                (exe, args)        -> run (fromText exe) (args <> ["--modules"] <> (T.words modules))
           postBundleHook pursHooks
           eC <- lastExitCode
           case (eC == 0) of
@@ -213,6 +219,14 @@ compilationMode = "CompileAlways"
 # Whether bundle everything in a fat app
 #
 bundle     = true
+#
+# Override the bundle command executable
+#
+bundleExe  = "pulp"
+#
+# Override the bundle command arguments
+#
+bundleOpts = []
 #
 # The path to a specific directory containing the purescript toolchain.
 # Example: snaplet/purs/node_modules/purescript/vendor.

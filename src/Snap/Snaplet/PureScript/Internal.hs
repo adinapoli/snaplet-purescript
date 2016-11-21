@@ -77,6 +77,10 @@ data PureScript = PureScript {
   -- ^ Whether or not bundle everything in a fat app with a PS namespace.
   , pursBundleName :: !T.Text
   -- ^ The name for your bundled output.
+  , pursBundleExe :: !T.Text
+  -- ^ The name for the program used to bundle your app. (e.g. "pulp", "psc-bundle", etc)
+  , pursBundleOpts :: ![T.Text]
+  -- ^ Override the arguments passed to the bundle executable.
   , pursPulpPath :: !PulpPath
   -- ^ The absolute path to a `pulp` executable. This can be user-provided
   -- or inferred automatically by this snaplet.
