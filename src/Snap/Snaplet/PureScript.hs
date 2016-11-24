@@ -156,12 +156,15 @@ bundle PureScript{..} =
         True -> do
           preBundleHook pursHooks
           rm_rf (fromText bundlePath)
-          let modules = T.intercalate "," pursModules
           echo $ "Bundling everything in " <> bundlePath
           res <- case (pursBundleExe, pursBundleOpts) of
-                ("psc-bundle", []) -> run "psc-bundle" (["js/**/*.js", "-m"] <> (T.words modules) <> ["-o", bundlePath, "-n", "PS"])
-                ("pulp", [])       -> run "pulp" (["build", "-I", "src", "--modules"] <> (T.words modules) <> ["-t", bundlePath])
-                (exe, args)        -> run (fromText exe) (args <> ["--modules"] <> (T.words modules))
+                ("psc-bundle", []) ->
+                  let modules = T.intercalate " -m " pursModules
+                  in run "psc-bundle" (["js/**/*.js", "-m"] <> (T.words modules) <> ["-o", bundlePath, "-n", "PS"])
+                ("pulp", [])       ->
+                 let modules = T.intercalate "," pursModules
+                 in run "pulp" (["build", "-I", "src", "--modules"] <> (T.words modules) <> ["-t", bundlePath])
+                (exe, args)        -> run (fromText exe) args
           postBundleHook pursHooks
           eC <- lastExitCode
           case (eC == 0) of
