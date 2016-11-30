@@ -28,7 +28,6 @@ import           Snap.Snaplet.PureScript.Internal as Internals (PureScript)
 import           Text.Printf
 import           Text.RawString.QQ
 
-
 --------------------------------------------------------------------------------
 -- | Snaplet initialization
 initPurs :: SnapletInit b PureScript
@@ -160,16 +159,24 @@ bundle PureScript{..} =
           res <- case (pursBundleExe, pursBundleOpts) of
                 ("psc-bundle", []) ->
                   let modules = T.intercalate " -m " pursModules
-                  in run "psc-bundle" (["js/**/*.js", "-m"] <> (T.words modules) <> ["-o", bundlePath, "-n", "PS"])
+                      pscBundlExe = maybeM "psc-bundle" (\x -> x <> "/" <> "psc-bundle") pursPsPath
+                  in run (fromText pscBundlExe) (["js/**/*.js", "-m"]
+                      <> (T.words modules)
+                      <> ["-o", bundlePath, "-n", "PS"])
                 ("pulp", [])       ->
                  let modules = T.intercalate "," pursModules
-                 in run "pulp" (["build", "-I", "src", "--modules"] <> (T.words modules) <> ["-t", bundlePath])
+                 in run (fromString $ getPulpPath pursPulpPath) (["build", "-I", "src", "--modules"]
+                                                                 <> (T.words modules)
+                                                                 <> ["-t", bundlePath])
                 (exe, args)        -> run (fromText exe) args
           postBundleHook pursHooks
           eC <- lastExitCode
           case (eC == 0) of
             True -> return CompilationSucceeded
             False -> return $ CompilationFailed res
+  where
+    maybeM :: (Eq m, Monoid m) => m -> (m -> m) -> m -> m
+    maybeM alt f x = if x == mempty then alt else f x
 
 --------------------------------------------------------------------------------
 compileWithMode :: Handler b PureScript CompilationOutput
