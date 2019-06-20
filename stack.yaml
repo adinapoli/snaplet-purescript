@@ -3,4 +3,9 @@ packages:
 - '.'
 extra-deps:
   - string-conv-0.1
-resolver: lts-5.5
+  - snap-1.1.2.0
+  - heist-1.1.0.1
+  - map-syntax-0.3
+  - xmlhtml-0.2.5.2
+  - pwstore-fast-2.4.4
+resolver: lts-13.26

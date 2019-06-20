@@ -25,7 +25,6 @@ import           Control.Monad.Reader
 import           Data.Configurator as Cfg
 import           Data.Configurator.Types
 import           Data.Maybe
-import           Data.Monoid
 import           Data.String
 import           Data.String.Conv
 import qualified Data.Text as T
