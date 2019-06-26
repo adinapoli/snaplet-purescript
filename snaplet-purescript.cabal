@@ -1,5 +1,5 @@
 name:                snaplet-purescript
-version:             0.5.2.2
+version:             0.5.2.3
 synopsis:            Automatic (re)compilation of purescript projects
 description:         Automatic (re)compilation of purescript projects
 license:             MIT
@@ -23,7 +23,7 @@ library
     Paths_snaplet_purescript
   build-depends: base >=4.6 && < 5.1,
                  snap-core < 1.1.0.0,
-                 snap < 1.1.0.0,
+                 snap >= 1.1.2.0,
                  raw-strings-qq >= 1.0.2,
                  string-conv,
                  text > 0.11 && < 1.4.0.0,
