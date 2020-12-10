@@ -51,22 +51,22 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   verbosity   <- liftIO (lookupDefault Verbose config "verbosity")
   bndl        <- liftIO (lookupDefault True config "bundle")
   bundleName  <- liftIO (lookupDefault "app.js" config "bundleName")
-  bundleExe   <- liftIO (lookupDefault "psc-bundle" config "bundleExe")
+  bundleExe   <- liftIO (lookupDefault "purs" config "bundleExe")
   bundleOpts  <- liftIO (lookupDefault mempty config "bundleOpts")
   modules     <- liftIO (lookupDefault ["Main"] config  "modules")
   psPath      <- liftIO (lookupDefault mempty config "pureScriptPath")
-  pulpPath    <- findOrInstallPulp psPath =<< liftIO (Cfg.lookup config "pulpPath")
+  spagoPath   <- findOrInstallSpago psPath =<< liftIO (Cfg.lookup config "spagoPath")
   psaOpts     <- liftIO (lookupDefault mempty config "psaOpts")
   permissive  <- liftIO (lookupDefault False config "permissiveInit")
   cm  <- getCompilationFlavour
-  bowerfile  <- fromText <$> getBowerFile
+  spagofile  <- fromText <$> getSpagoFile
   -- If they do not exist, create the required directories
   purs <- shelly $ verbosely $ chdir (fromText destDir) $ do
     mkdir_p (fromText outDir)
-    bowerFileExists <- test_f bowerfile
-    echo $ "Checking existance of " <> toTextIgnore bowerfile
-    unless bowerFileExists $ do
-      run_ (fromString $ getPulpPath pulpPath) ["init"]
+    spagofileExists <- test_f spagofile
+    echo $ "Checking existance of " <> toTextIgnore spagofile
+    unless spagofileExists $ do
+      run_ (fromString $ getSpagoPath spagoPath) ["init"]
 
     return PureScript {
              pursCompilationMode = cm
@@ -75,7 +75,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
            , pursBundleName      = bundleName
            , pursBundleExe       = bundleExe
            , pursBundleOpts      = bundleOpts
-           , pursPulpPath        = pulpPath
+           , pursSpagoPath       = spagoPath
            , pursPsPath          = psPath
            , pursPsaOpts         = psaOpts
            , pursPermissiveInit  = permissive
@@ -136,8 +136,8 @@ build PureScript{..} = shV $ errExit False $ do
   chdir (fromText pursPwdDir) $ do
     I.prependToPath (fromText pursPsPath)
     preBuildHook pursHooks
-    let args = ["build", "-o", pursPwdDir <> "/" <> pursOutputDir] <> pursPsaOpts
-    run_ (fromString . getPulpPath $ pursPulpPath) args
+    let args = ["build"] <> pursPsaOpts
+    run_ (fromString . getSpagoPath $ pursSpagoPath) args
     eC <- lastExitCode
     preBuildHook pursHooks
     case (eC == 0) of
@@ -157,15 +157,15 @@ bundle PureScript{..} =
           rm_rf (fromText bundlePath)
           echo $ "Bundling everything in " <> bundlePath
           res <- case (pursBundleExe, pursBundleOpts) of
-                ("psc-bundle", []) ->
+                ("purs", []) ->
                   let modules = T.intercalate " -m " pursModules
-                      pscBundlExe = maybeM "psc-bundle" (\x -> x <> "/" <> "psc-bundle") pursPsPath
-                  in run (fromText pscBundlExe) (["js/**/*.js", "-m"]
+                      pursBundlExe = maybeM "purs" (\x -> x <> "/" <> "purs") pursPsPath
+                  in run (fromText pursBundlExe) (["bundle", "js/**/*.js", "-m"]
                       <> (T.words modules)
                       <> ["-o", bundlePath, "-n", "PS"])
-                ("pulp", [])       ->
+                ("spago", [])       ->
                  let modules = T.intercalate "," pursModules
-                 in run (fromString $ getPulpPath pursPulpPath) (["build", "-I", "src", "--modules"]
+                 in run (fromString $ getSpagoPath pursSpagoPath) (["build", "-I", "src", "--modules"]
                                                                  <> (T.words modules)
                                                                  <> ["-t", bundlePath])
                 (exe, args)        -> run (fromText exe) args
@@ -232,7 +232,7 @@ bundle     = true
 #
 # Override the bundle command executable
 #
-bundleExe  = "pulp"
+bundleExe  = "purs"
 #
 # Override the bundle command arguments
 #
@@ -244,11 +244,11 @@ bundleOpts = []
 #
 # pureScriptPath = ""
 #
-# The path to a specific, user-provided version of Pulp.
+# The path to a specific, user-provided version of Spago.
 # Leave it uncommented if you plan to use the globally-installed one or you
 # are OK with snaplet-purescript installing it for you.
 #
-# pulpPath = ""
+# spagoPath = ""
 #
 # Extra options to pass to https://github.com/natefaubion/purescript-psa,
 # if available.
@@ -260,7 +260,7 @@ permissiveInit = false
 # to not start at all when you are debugging your PS.
 #
 # The name of the output bundle
-bundleName = "app.js"
+bundleName = "index.js"
 #
 # The list of modules you want to compile under the PS namespace (bundle only)
 # Adding 'Main' will make sure you will have something like PS.Main.main in
