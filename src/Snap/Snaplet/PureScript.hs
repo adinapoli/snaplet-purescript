@@ -160,7 +160,7 @@ bundle PureScript{..} =
                 ("purs", []) ->
                   let modules = T.intercalate " -m " pursModules
                       pursBundlExe = maybeM "purs" (\x -> x <> "/" <> "purs") pursPsPath
-                  in run (fromText pursBundlExe) (["bundle", "js/**/*.js", "-m"]
+                  in run (fromText pursBundlExe) (["bundle", "output/*/**/*.js", "-m"]
                       <> (T.words modules)
                       <> ["-o", bundlePath, "-n", "PS"])
                 ("spago", [])       ->
