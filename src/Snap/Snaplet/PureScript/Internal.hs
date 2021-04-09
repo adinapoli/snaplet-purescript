@@ -6,15 +6,15 @@ module Snap.Snaplet.PureScript.Internal (
     CompilationMode(..)
   , CompilationOutput(..)
   , Verbosity(..)
-  , PulpPath(getPulpPath)
+  , SpagoPath(getSpagoPath)
   , PureScript(..)
   , devFlagEnabled
   , getCompilationFlavour
   , getDestDir
-  , getBowerFile
+  , getSpagoFile
   , getAbsoluteOutputDir
   , prependToPath
-  , findOrInstallPulp
+  , findOrInstallSpago
   , shV
   , shS
   ) where
@@ -47,11 +47,11 @@ instance Configured CompilationMode where
   convert _ = Nothing
 
 --------------------------------------------------------------------------------
-newtype PulpPath = PulpPath { getPulpPath :: FilePath } deriving (Show, Read)
+newtype SpagoPath = SpagoPath { getSpagoPath :: FilePath } deriving (Show, Read)
 
-instance Configured PulpPath where
+instance Configured SpagoPath where
   convert (String "") = Nothing
-  convert (String t)  = Just . PulpPath . toS $ t
+  convert (String t)  = Just . SpagoPath . toS $ t
   convert _ = Nothing
 
 --------------------------------------------------------------------------------
@@ -77,11 +77,11 @@ data PureScript = PureScript {
   , pursBundleName :: !T.Text
   -- ^ The name for your bundled output.
   , pursBundleExe :: !T.Text
-  -- ^ The name for the program used to bundle your app. (e.g. "pulp", "psc-bundle", etc)
+  -- ^ The name for the program used to bundle your app. (e.g. "spago", "psc-bundle", etc)
   , pursBundleOpts :: ![T.Text]
   -- ^ Override the arguments passed to the bundle executable.
-  , pursPulpPath :: !PulpPath
-  -- ^ The absolute path to a `pulp` executable. This can be user-provided
+  , pursSpagoPath :: !SpagoPath
+  -- ^ The absolute path to a `spago` executable. This can be user-provided
   -- or inferred automatically by this snaplet.
   , pursPsPath :: !T.Text
   -- ^ The absolute path to the directory containing the PureScript toolchain.
@@ -120,22 +120,22 @@ shV :: MonadIO m => Sh a -> m a
 shV = liftIO . shelly . verbosely . escaping False
 
 --------------------------------------------------------------------------------
-findOrInstallPulp :: T.Text
-                  -> Maybe PulpPath
+findOrInstallSpago :: T.Text
+                  -> Maybe SpagoPath
                   -> (Monad (m b v), MonadIO (m b v), MonadSnaplet m)
-                  => m b v PulpPath
-findOrInstallPulp psPath mbP = do
-  let p = fromMaybe (PulpPath "pulp") mbP
-  installed <- shS (pulpInstalled psPath p)
+                  => m b v SpagoPath
+findOrInstallSpago psPath mbP = do
+  let p = fromMaybe (SpagoPath "spago") mbP
+  installed <- shS (spagoInstalled psPath p)
   case installed of
     True  -> return p
     False -> shS $ do
-      echo "Pulp not found, installing it locally for you..."
-      installPulp >> whichPulp
+      echo "Spago not found, installing it locally for you..."
+      installSpago >> whichSpago
 
 --------------------------------------------------------------------------------
-whichPulp :: MonadIO m => m PulpPath
-whichPulp = PulpPath . toS . T.strip <$> shS (run "which" ["pulp"])
+whichSpago :: MonadIO m => m SpagoPath
+whichSpago = SpagoPath . toS . T.strip <$> shS (run "which" ["spago"])
 
 --------------------------------------------------------------------------------
 -- | add the filepath onto the PATH env variable
@@ -146,12 +146,12 @@ prependToPath fp = do
   setenv "PATH" $ tp <> T.singleton ':' <> pe
 
 --------------------------------------------------------------------------------
-installPulp :: MonadIO m => m ()
-installPulp = shS $ run_ "npm" ["install", "pulp"]
+installSpago :: MonadIO m => m ()
+installSpago = shS $ run_ "npm" ["install", "spago"]
 
 --------------------------------------------------------------------------------
-pulpInstalled :: T.Text -> PulpPath -> Sh Bool
-pulpInstalled psPath (PulpPath pp) = errExit False $ verbosely $ do
+spagoInstalled :: T.Text -> SpagoPath -> Sh Bool
+spagoInstalled psPath (SpagoPath pp) = errExit False $ verbosely $ do
   check `catchany_sh` \(e :: SomeException) -> do
     echo (toS . show $ e)
     return False
@@ -192,8 +192,8 @@ getDestDir = do
   return $ T.pack fp
 
 --------------------------------------------------------------------------------
-getBowerFile :: (Monad (m b v), MonadIO (m b v), MonadSnaplet m) => m b v T.Text
-getBowerFile = (`mappend` "/bower.json") <$> getDestDir
+getSpagoFile :: (Monad (m b v), MonadIO (m b v), MonadSnaplet m) => m b v T.Text
+getSpagoFile = (`mappend` "/spago.dhall") <$> getDestDir
 
 --------------------------------------------------------------------------------
 getAbsoluteOutputDir :: Handler b PureScript T.Text

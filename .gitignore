@@ -9,3 +9,5 @@ examples/example-complex/snaplets/purs/js
 examples/example-complex/node_modules
 examples/**/log
 .stack-work
+dist-newstyle
+tags*

@@ -35,7 +35,7 @@ mkHook :: T.Text -> Hook
 mkHook "" = noOpHook
 mkHook t  = case T.words t of
   [] -> noOpHook
-  (x:args) -> run_ (fromText x) args
+  (x:args) -> escaping False $ run_ (fromText x) args
 
 --------------------------------------------------------------------------------
 getHooks :: Config -> IO Hooks
