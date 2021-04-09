@@ -93,7 +93,7 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
     res <- build  purs
     _   <- bundle purs
     case res of
-      CompilationFailed reason -> unless permissive (fail (T.unpack reason))
+      CompilationFailed reason -> unless permissive (error (T.unpack reason))
       CompilationSucceeded -> return ()
 
   shelly $ verbosely $ chdir (fromText destDir) $ postInitHook hooks
