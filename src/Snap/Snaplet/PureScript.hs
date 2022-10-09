@@ -55,7 +55,8 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   bundleOpts  <- liftIO (lookupDefault mempty config "bundleOpts")
   modules     <- liftIO (lookupDefault ["Main"] config  "modules")
   psPath      <- liftIO (lookupDefault mempty config "pureScriptPath")
-  spagoPath   <- findOrInstallSpago psPath =<< liftIO (Cfg.lookup config "spagoPath")
+  spagoPath   <- liftIO (Cfg.lookup config "spagoPath") >>=
+    \sPath -> findOrInstallSpago psPath sPath
   psaOpts     <- liftIO (lookupDefault mempty config "psaOpts")
   permissive  <- liftIO (lookupDefault False config "permissiveInit")
   cm  <- getCompilationFlavour
