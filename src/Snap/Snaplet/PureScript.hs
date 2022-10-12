@@ -55,7 +55,11 @@ initPurs = makeSnaplet "purs" description (Just dataDir) $ do
   bundleOpts  <- liftIO (lookupDefault mempty config "bundleOpts")
   modules     <- liftIO (lookupDefault ["Main"] config  "modules")
   psPath      <- liftIO (lookupDefault mempty config "pureScriptPath")
-  spagoPath   <- findOrInstallSpago psPath =<< liftIO (Cfg.lookup config "spagoPath")
+  -- Right hand side of this bind needs to be eta expanded to work with
+  -- GHC 9.X, see simplified subsumption GHC proposal for more details:
+  -- > https://github.com/ghc-proposals/ghc-proposals/pull/287
+  spagoPath   <- liftIO (Cfg.lookup config "spagoPath") >>=
+    \sPath -> findOrInstallSpago psPath sPath
   psaOpts     <- liftIO (lookupDefault mempty config "psaOpts")
   permissive  <- liftIO (lookupDefault False config "permissiveInit")
   cm  <- getCompilationFlavour
